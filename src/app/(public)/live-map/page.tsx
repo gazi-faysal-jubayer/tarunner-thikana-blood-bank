@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { MapPin, Filter, Droplet, AlertCircle, RefreshCw } from "lucide-react";
+import { useState, Suspense } from "react";
+import dynamic from "next/dynamic";
+import { MapPin, Filter, Droplet, AlertCircle, RefreshCw, Layers, Navigation2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -12,7 +15,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MockMap } from "@/components/maps/mock-map";
+import type { DistanceRing } from "@/components/maps/types";
+
+// Dynamically import map components with no SSR
+const EnhancedMap = dynamic(
+  () => import("@/components/maps/enhanced-map").then((mod) => mod.EnhancedMap),
+  { ssr: false, loading: () => <div className="flex items-center justify-center h-[600px] bg-muted">Loading map...</div> }
+);
+
+const DistanceRingControls = dynamic(
+  () => import("@/components/maps/distance-ring").then((mod) => mod.DistanceRingControls),
+  { ssr: false }
+);
 
 const bloodGroups = ["সব", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const urgencyLevels = [
@@ -74,6 +88,11 @@ export default function LiveMapPage() {
   const [selectedBloodGroup, setSelectedBloodGroup] = useState("সব");
   const [selectedUrgency, setSelectedUrgency] = useState("all");
   const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
+  const [enable3D, setEnable3D] = useState(false);
+  const [enableLocation, setEnableLocation] = useState(false);
+  const [showDistanceRings, setShowDistanceRings] = useState(false);
+  const [distanceRings, setDistanceRings] = useState<DistanceRing[]>([]);
+  const [mapCenter] = useState<[number, number]>([90.4125, 23.8103]); // Dhaka center
 
   // Filter requests based on selection
   const filteredRequests = mockRequests.filter((req) => {
@@ -148,13 +167,26 @@ export default function LiveMapPage() {
       <div className="container pb-8">
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Map */}
-          <div className="lg:col-span-2">
-            <MockMap
+          <div className="lg:col-span-2 relative">
+            <EnhancedMap
               markers={filteredRequests}
               height="600px"
               onMarkerClick={(marker) => setSelectedMarker(marker.id)}
               selectedMarker={selectedMarker}
+              enable3D={enable3D}
+              enableLocationTracking={enableLocation}
+              distanceRings={distanceRings}
+              style="streets"
             />
+            
+            {/* Distance Ring Controls Overlay */}
+            {showDistanceRings && (
+              <DistanceRingControls
+                center={mapCenter}
+                onChange={setDistanceRings}
+                enabled={showDistanceRings}
+              />
+            )}
           </div>
 
           {/* Request List */}

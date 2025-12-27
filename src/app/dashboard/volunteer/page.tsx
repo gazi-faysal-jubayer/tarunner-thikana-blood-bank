@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ClipboardList,
@@ -12,55 +12,155 @@ import {
   AlertCircle,
   TrendingUp,
   Droplet,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { MockMap } from "@/components/maps/mock-map";
+import { createClient } from "@/lib/supabase/client";
 
-// Mock data
-const mockVolunteerData = {
-  name: "আব্দুল করিম",
-  requestsHandled: 45,
-  donationsFacilitated: 38,
-  successRate: 84,
-  assignedRequests: [
-    {
-      id: "1",
-      trackingId: "BLD-20241226-A1B2",
-      bloodGroup: "A+",
-      hospitalName: "ঢাকা মেডিকেল কলেজ",
-      patientName: "মোঃ করিম",
-      urgency: "critical" as const,
-      status: "volunteer_assigned",
-      unitsNeeded: 2,
-      neededBy: "আজ সন্ধ্যা ৬টা",
-      latitude: 23.8103,
-      longitude: 90.4125,
-    },
-    {
-      id: "2",
-      trackingId: "BLD-20241226-C3D4",
-      bloodGroup: "O-",
-      hospitalName: "স্কয়ার হাসপাতাল",
-      patientName: "ফাতেমা বেগম",
-      urgency: "urgent" as const,
-      status: "volunteer_assigned",
-      unitsNeeded: 1,
-      neededBy: "আগামীকাল সকাল",
-      latitude: 23.78,
-      longitude: 90.42,
-    },
-  ],
-  nearbyDonors: 15,
-};
+interface VolunteerData {
+  id: string;
+  user_id: string;
+  employee_id: string;
+  requests_handled: number;
+  donations_facilitated: number;
+  success_rate: number;
+  is_active: boolean;
+  latitude: number;
+  longitude: number;
+  coverage_radius_km: number;
+  district: string;
+}
+
+interface ProfileData {
+  full_name: string;
+  email: string;
+}
+
+interface AssignedRequest {
+  id: string;
+  tracking_id: string;
+  blood_group: string;
+  hospital_name: string;
+  patient_name: string;
+  urgency: string;
+  status: string;
+  units_needed: number;
+  needed_by: string;
+  latitude: number;
+  longitude: number;
+}
 
 export default function VolunteerDashboardPage() {
+  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [volunteer, setVolunteer] = useState<VolunteerData | null>(null);
+  const [assignedRequests, setAssignedRequests] = useState<AssignedRequest[]>([]);
+  const [nearbyDonors, setNearbyDonors] = useState(0);
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
+
+  const supabase = createClient();
+
+  useEffect(() => {
+    loadVolunteerData();
+  }, []);
+
+  const loadVolunteerData = async () => {
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        window.location.href = "/login";
+        return;
+      }
+
+      // Get profile
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("full_name, email")
+        .eq("id", user.id)
+        .single();
+
+      if (profileData) {
+        setProfile(profileData);
+      }
+
+      // Get volunteer data
+      const { data: volunteerData } = await supabase
+        .from("volunteers")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+
+      if (volunteerData) {
+        setVolunteer(volunteerData);
+      }
+
+      // Get assigned requests
+      const { data: requests } = await supabase
+        .from("blood_requests")
+        .select("*")
+        .eq("assigned_volunteer_id", volunteerData?.id)
+        .in("status", ["volunteer_assigned", "donor_assigned", "donor_confirmed", "in_progress"])
+        .order("created_at", { ascending: false });
+
+      if (requests) {
+        setAssignedRequests(requests.map(r => ({
+          id: r.id,
+          tracking_id: r.tracking_id,
+          blood_group: r.blood_group,
+          hospital_name: r.hospital_name,
+          patient_name: r.patient_name,
+          urgency: r.urgency,
+          status: r.status,
+          units_needed: r.units_needed,
+          needed_by: r.needed_by,
+          latitude: r.latitude,
+          longitude: r.longitude,
+        })));
+      }
+
+      // Count nearby available donors
+      const { count } = await supabase
+        .from("donors")
+        .select("*", { count: "exact", head: true })
+        .eq("is_available", true)
+        .eq("district", volunteerData?.district || "Dhaka");
+
+      setNearbyDonors(count || 0);
+
+    } catch (error) {
+      console.error("Error loading volunteer data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-blood-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      {/* Welcome Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">স্বাগতম, {profile?.full_name || "ভলান্টিয়ার"}</h1>
+          <p className="text-muted-foreground">
+            ভলান্টিয়ার ID: {volunteer?.employee_id || "N/A"}
+          </p>
+        </div>
+        <Badge variant={volunteer?.is_active ? "default" : "secondary"} className="text-sm">
+          {volunteer?.is_active ? "সক্রিয়" : "নিষ্ক্রিয়"}
+        </Badge>
+      </div>
+
       {/* Stats Grid */}
       <div className="grid md:grid-cols-4 gap-4">
         <Card>
@@ -69,7 +169,7 @@ export default function VolunteerDashboardPage() {
               <div>
                 <p className="text-sm text-muted-foreground">সক্রিয় অনুরোধ</p>
                 <p className="text-2xl font-bold text-blood-600">
-                  {mockVolunteerData.assignedRequests.length}
+                  {assignedRequests.length}
                 </p>
               </div>
               <div className="w-10 h-10 rounded-full bg-blood-100 flex items-center justify-center">
@@ -84,7 +184,7 @@ export default function VolunteerDashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">মোট সম্পন্ন</p>
-                <p className="text-2xl font-bold">{mockVolunteerData.requestsHandled}</p>
+                <p className="text-2xl font-bold">{volunteer?.requests_handled || 0}</p>
               </div>
               <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
                 <CheckCircle className="h-5 w-5 text-green-600" />
@@ -99,7 +199,7 @@ export default function VolunteerDashboardPage() {
               <div>
                 <p className="text-sm text-muted-foreground">রক্তদান সহায়তা</p>
                 <p className="text-2xl font-bold">
-                  {mockVolunteerData.donationsFacilitated}
+                  {volunteer?.donations_facilitated || 0}
                 </p>
               </div>
               <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
@@ -114,13 +214,13 @@ export default function VolunteerDashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">সাফল্যের হার</p>
-                <p className="text-2xl font-bold">{mockVolunteerData.successRate}%</p>
+                <p className="text-2xl font-bold">{volunteer?.success_rate || 0}%</p>
               </div>
               <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
                 <TrendingUp className="h-5 w-5 text-blue-600" />
               </div>
             </div>
-            <Progress value={mockVolunteerData.successRate} className="mt-2 h-1" />
+            <Progress value={volunteer?.success_rate || 0} className="mt-2 h-1" />
           </CardContent>
         </Card>
       </div>
@@ -132,7 +232,7 @@ export default function VolunteerDashboardPage() {
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="flex items-center gap-2">
               <ClipboardList className="h-5 w-5 text-blood-600" />
-              আপনার অনুরোধ
+              আপনার অনুরোধ ({assignedRequests.length})
             </CardTitle>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/dashboard/volunteer/requests">
@@ -142,95 +242,111 @@ export default function VolunteerDashboardPage() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
-            {mockVolunteerData.assignedRequests.map((request) => (
-              <div
-                key={request.id}
-                onClick={() => setSelectedRequest(request.id)}
-                className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                  selectedRequest === request.id
-                    ? "border-blood-600 bg-blood-50"
-                    : "border-transparent bg-muted/50 hover:border-blood-200"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                      request.urgency === "critical"
-                        ? "bg-urgency-critical animate-pulse"
-                        : "bg-urgency-urgent"
-                    } text-white`}
-                  >
-                    <span className="font-bold">{request.bloodGroup}</span>
-                  </div>
-
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant={request.urgency} className="text-xs">
-                        {request.urgency === "critical" ? "জরুরি" : "দ্রুত"}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {request.trackingId}
-                      </span>
-                    </div>
-                    <p className="font-medium">{request.hospitalName}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {request.patientName} • {request.unitsNeeded} ব্যাগ
-                    </p>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                      <Clock className="h-3 w-3" />
-                      <span>{request.neededBy}</span>
-                    </div>
-                  </div>
-
-                  <Button variant="blood" size="sm">
-                    দাতা খুঁজুন
-                  </Button>
-                </div>
-              </div>
-            ))}
-
-            {mockVolunteerData.assignedRequests.length === 0 && (
+            {assignedRequests.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <ClipboardList className="h-12 w-12 mx-auto mb-4 opacity-20" />
                 <p>কোনো সক্রিয় অনুরোধ নেই</p>
+                <p className="text-sm mt-2">নতুন অনুরোধ আসলে আপনাকে জানানো হবে</p>
               </div>
+            ) : (
+              assignedRequests.map((request) => (
+                <div
+                  key={request.id}
+                  onClick={() => setSelectedRequest(request.id)}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                    selectedRequest === request.id
+                      ? "border-blood-600 bg-blood-50"
+                      : "border-transparent bg-muted/50 hover:border-blood-200"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                        request.urgency === "critical"
+                          ? "bg-red-600 animate-pulse"
+                          : request.urgency === "urgent"
+                          ? "bg-orange-500"
+                          : "bg-blue-500"
+                      } text-white`}
+                    >
+                      <span className="font-bold">{request.blood_group}</span>
+                    </div>
+
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge 
+                          variant={request.urgency === "critical" ? "destructive" : "default"} 
+                          className="text-xs"
+                        >
+                          {request.urgency === "critical" ? "জরুরি" : request.urgency === "urgent" ? "দ্রুত" : "সাধারণ"}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {request.tracking_id}
+                        </span>
+                      </div>
+                      <p className="font-medium">{request.hospital_name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {request.patient_name} • {request.units_needed} ব্যাগ
+                      </p>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                        <Clock className="h-3 w-3" />
+                        <span>
+                          {request.needed_by 
+                            ? new Date(request.needed_by).toLocaleDateString("bn-BD") 
+                            : "যত দ্রুত সম্ভব"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <Button variant="blood" size="sm">
+                      দাতা খুঁজুন
+                    </Button>
+                  </div>
+                </div>
+              ))
             )}
           </CardContent>
         </Card>
 
-        {/* Map */}
+        {/* Quick Info */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2">
               <MapPin className="h-5 w-5 text-blood-600" />
-              অনুরোধের অবস্থান
+              আপনার এলাকা
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <MockMap
-              markers={mockVolunteerData.assignedRequests.map((req) => ({
-                id: req.id,
-                type: "request" as const,
-                latitude: req.latitude,
-                longitude: req.longitude,
-                bloodGroup: req.bloodGroup,
-                urgency: req.urgency,
-                title: req.hospitalName,
-                subtitle: `${req.bloodGroup} • ${req.unitsNeeded} ব্যাগ`,
-              }))}
-              height="350px"
-              selectedMarker={selectedRequest}
-              onMarkerClick={(marker) => setSelectedRequest(marker.id)}
-            />
-            <div className="mt-4 flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
-                <Users className="h-4 w-4 inline mr-1" />
-                কাছাকাছি উপলব্ধ দাতা: {mockVolunteerData.nearbyDonors} জন
-              </span>
-              <Button variant="outline" size="sm" asChild>
+            <div className="space-y-4">
+              <div className="p-4 bg-muted/50 rounded-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-muted-foreground">জেলা</span>
+                  <span className="font-medium">{volunteer?.district || "N/A"}</span>
+                </div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-muted-foreground">কভারেজ এলাকা</span>
+                  <span className="font-medium">{volunteer?.coverage_radius_km || 10} কি.মি.</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">উপলব্ধ দাতা</span>
+                  <Badge variant="outline">
+                    <Users className="h-3 w-3 mr-1" />
+                    {nearbyDonors} জন
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="h-[200px] bg-muted rounded-xl flex items-center justify-center">
+                <div className="text-center text-muted-foreground">
+                  <MapPin className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">ম্যাপ দেখতে বড় স্ক্রিনে যান</p>
+                </div>
+              </div>
+
+              <Button variant="outline" className="w-full" asChild>
                 <Link href="/dashboard/volunteer/map">
-                  বড় ম্যাপ
-                  <ArrowRight className="h-4 w-4 ml-1" />
+                  <MapPin className="h-4 w-4 mr-2" />
+                  বড় ম্যাপ দেখুন
                 </Link>
               </Button>
             </div>
@@ -268,9 +384,12 @@ export default function VolunteerDashboardPage() {
             <Button
               variant="outline"
               className="h-auto py-4 flex flex-col items-center gap-2"
+              asChild
             >
-              <ClipboardList className="h-6 w-6 text-blood-600" />
-              <span>রিপোর্ট তৈরি</span>
+              <Link href="/dashboard/volunteer/history">
+                <ClipboardList className="h-6 w-6 text-blood-600" />
+                <span>ইতিহাস দেখুন</span>
+              </Link>
             </Button>
           </div>
         </CardContent>
@@ -278,5 +397,3 @@ export default function VolunteerDashboardPage() {
     </div>
   );
 }
-
-

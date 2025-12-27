@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Droplet, Heart, Mail, Loader2, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { Droplet, Heart, Lock, Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,34 +10,75 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { useToast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
-  const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
-  const [emailSent, setEmailSent] = useState(false);
+  const [password, setPassword] = useState("");
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Use Supabase Auth Magic Link (OTP via email)
-    try {
-      // In production, this would use Supabase Auth:
-      // const { data, error } = await supabase.auth.signInWithOtp({ email })
-      
-      // Mock implementation for now
-      setTimeout(() => {
-        setEmailSent(true);
-        toast({
-          title: "ইমেইল পাঠানো হয়েছে ✓",
-          description: "আপনার ইমেইলে একটি লগইন লিংক পাঠানো হয়েছে",
-        });
-        setIsLoading(false);
-      }, 1000);
-    } catch (error) {
+    // Get form values
+    const formData = new FormData(e.currentTarget);
+    const formEmail = (formData.get("email") as string) || email;
+    const formPassword = (formData.get("password") as string) || password;
+
+    if (!formEmail || !formPassword) {
       toast({
         title: "ত্রুটি",
-        description: "লগইন লিংক পাঠাতে সমস্যা হয়েছে",
+        description: "ইমেইল এবং পাসওয়ার্ড প্রয়োজন",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: formEmail.trim(),
+          password: formPassword,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        toast({
+          title: "লগইন ব্যর্থ",
+          description: result.error === "Invalid credentials" 
+            ? "ভুল ইমেইল বা পাসওয়ার্ড"
+            : result.error || "লগইন করতে সমস্যা হয়েছে",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      // Success - show message and redirect
+      toast({
+        title: "সফল ✓",
+        description: `স্বাগতম, ${result.user.name || result.user.email}!`,
+      });
+
+      // Redirect based on role
+      const redirectUrl = 
+        result.role === "admin" ? "/dashboard/admin" :
+        result.role === "volunteer" ? "/dashboard/volunteer" :
+        result.role === "donor" ? "/dashboard/donor" :
+        "/dashboard";
+
+      // Use window.location for hard redirect (ensures cookies are set)
+      window.location.href = redirectUrl;
+
+    } catch (error: any) {
+      console.error("Login error:", error);
+      toast({
+        title: "ত্রুটি",
+        description: "লগইন করতে সমস্যা হয়েছে",
         variant: "destructive",
       });
       setIsLoading(false);
@@ -76,67 +116,54 @@ export default function LoginPage() {
           </CardHeader>
 
           <CardContent>
-            {emailSent ? (
-              <div className="py-8 text-center space-y-4">
-                <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                  <CheckCircle2 className="h-8 w-8 text-green-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg mb-2">ইমেইল পাঠানো হয়েছে!</h3>
-                  <p className="text-sm text-muted-foreground">
-                    <strong>{email}</strong> এ একটি লগইন লিংক পাঠানো হয়েছে।
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    আপনার ইমেইল চেক করুন এবং লিংকে ক্লিক করুন।
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setEmailSent(false);
-                    setEmail("");
-                  }}
-                  className="mt-4"
-                >
-                  ভিন্ন ইমেইল ব্যবহার করুন
-                </Button>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">ইমেইল অ্যাড্রেস</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
               </div>
-            ) : (
-              <form onSubmit={handleEmailLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email">ইমেইল অ্যাড্রেস</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    আমরা আপনার ইমেইলে একটি লগইন লিংক পাঠাব (পাসওয়ার্ড প্রয়োজন নেই)
-                  </p>
-                </div>
-                <Button
-                  type="submit"
-                  variant="blood"
-                  className="w-full"
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      লিংক পাঠানো হচ্ছে...
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="h-4 w-4 mr-2" />
-                      লগইন লিংক পাঠান
-                    </>
-                  )}
-                </Button>
-              </form>
-            )}
+              
+              <div className="space-y-2">
+                <Label htmlFor="password">পাসওয়ার্ড</Label>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                />
+              </div>
+
+              <Button
+                type="submit"
+                variant="blood"
+                className="w-full"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    লগইন হচ্ছে...
+                  </>
+                ) : (
+                  <>
+                    <Lock className="h-4 w-4 mr-2" />
+                    লগইন করুন
+                  </>
+                )}
+              </Button>
+            </form>
 
             <div className="mt-6 text-center text-sm">
               <span className="text-muted-foreground">অ্যাকাউন্ট নেই? </span>
@@ -144,10 +171,17 @@ export default function LoginPage() {
                 রক্তদাতা হিসেবে নিবন্ধন করুন
               </Link>
             </div>
+
+            {/* Test credentials hint */}
+            <div className="mt-4 p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
+              <p className="font-medium mb-1">টেস্ট অ্যাকাউন্ট:</p>
+              <p>Admin: gazi.faysal.jubayer@gmail.com / Admin@123456</p>
+              <p>Donor: testdonor@gmail.com / Donor@123456</p>
+              <p>Volunteer: testvolunteer@gmail.com / Volunteer@123456</p>
+            </div>
           </CardContent>
         </Card>
       </div>
     </div>
   );
 }
-

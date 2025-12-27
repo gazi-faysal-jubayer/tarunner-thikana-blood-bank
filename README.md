@@ -248,10 +248,23 @@ This allows full development and testing without external services.
 
 ## Deployment
 
-### Vercel (Recommended)
-1. Connect repository to Vercel
-2. Add environment variables
-3. Deploy
+### Deploy to Vercel (Recommended - FREE) 🚀
+
+The easiest way to deploy is using Vercel's free tier:
+
+**📖 Complete Guide:** [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md)
+
+**Quick Steps:**
+1. Push code to GitHub
+2. Import to Vercel (https://vercel.com/new)
+3. Add environment variables
+4. Deploy (2-3 minutes)
+
+**Vercel Free Tier:**
+- ✅ 100 GB bandwidth/month
+- ✅ Unlimited deployments
+- ✅ Automatic HTTPS & CDN
+- ✅ Zero configuration
 
 ### Docker
 ```dockerfile
