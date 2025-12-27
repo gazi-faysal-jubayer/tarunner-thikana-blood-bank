@@ -1,23 +1,24 @@
 import { requireAdmin, logAdminAction } from '@/lib/permissions';
-import { createClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { user } = await requireAdmin();
     const body = await request.json();
     const { volunteerId, donorId, notes } = body;
+    const { id } = await params;
 
-    const supabase = createClient();
+    const supabase = await createServerSupabaseClient();
 
     // Create assignment
     const { error: assignmentError } = await supabase
       .from('assignments')
       .insert({
-        request_id: params.id,
+        request_id: id,
         assignee_id: volunteerId || donorId,
         type: volunteerId ? 'volunteer' : 'donor',
         assigned_by: user.id,
@@ -32,11 +33,11 @@ export async function POST(
     const { error: updateError } = await supabase
       .from('blood_requests')
       .update({ status: newStatus })
-      .eq('id', params.id);
+      .eq('id', id);
 
     if (updateError) throw updateError;
 
-    await logAdminAction('assign_request', 'blood_request', params.id, {
+    await logAdminAction('assign_request', 'blood_request', id, {
       assignee_id: volunteerId || donorId,
       type: volunteerId ? 'volunteer' : 'donor',
     });

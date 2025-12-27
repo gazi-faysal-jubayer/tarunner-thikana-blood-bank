@@ -1,5 +1,5 @@
 import { requirePermission, logAdminAction } from '@/lib/permissions';
-import { createClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = createClient();
+    const supabase = await createServerSupabaseClient();
 
     // Create auth user (requires service role key in production)
     // For now, return instruction to create via Supabase Dashboard

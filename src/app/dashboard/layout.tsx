@@ -58,6 +58,16 @@ export default function DashboardLayout({
   const loadUser = async () => {
     try {
       const response = await fetch("/api/auth/me");
+      
+      if (!response.ok) {
+        // If 401, just redirect to login without throwing
+        if (response.status === 401) {
+          router.push("/login");
+          return;
+        }
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
 
       if (!data.success || !data.user) {

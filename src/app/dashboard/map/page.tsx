@@ -135,6 +135,11 @@ export default function MapPage() {
   };
 
   const filteredMarkers = markers.filter((marker) => {
+    // Filter out markers with invalid coordinates
+    if (!marker || typeof marker.latitude !== 'number' || typeof marker.longitude !== 'number' ||
+        isNaN(marker.latitude) || isNaN(marker.longitude)) {
+      return false;
+    }
     if (marker.type === "request" && !showRequests) return false;
     if (marker.type === "donor" && !showDonors) return false;
     if (bloodGroupFilter !== "all" && marker.blood_group !== bloodGroupFilter) return false;
@@ -228,9 +233,9 @@ export default function MapPage() {
                 bloodGroup: m.blood_group,
                 urgency: m.urgency,
               }))}
-              center={[90.4125, 23.8103]} // Dhaka center
+              center={{ lat: 23.8103, lng: 90.4125 }} // Dhaka center
               zoom={11}
-              showCurrentLocation={true}
+              enableLocationTracking={true}
               enable3D={true}
             />
           </div>

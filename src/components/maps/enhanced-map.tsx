@@ -92,12 +92,47 @@ export function EnhancedMap({
   distanceRings = [],
   style = 'streets',
 }: EnhancedMapProps) {
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'enhanced-map.tsx:79',message:'EnhancedMap component mounted',data:{markersCount:markers?.length||0,center,zoom,enable3D,enableLocationTracking},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  }, []);
+  // #endregion
   const mapRef = useRef<MapRef>(null);
   const [hoveredMarker, setHoveredMarker] = useState<string | null>(null);
+  
+  // Ensure center has valid coordinates
+  const safeCenter = center && typeof center.lat === 'number' && typeof center.lng === 'number'
+    ? center
+    : { lat: 23.8103, lng: 90.4125 }; // Default to Dhaka
+
+  // Filter out markers with invalid coordinates
+  const validMarkers = (markers || []).filter(
+    (m) => {
+      const isValid = m && 
+        typeof m.latitude === 'number' && 
+        typeof m.longitude === 'number' &&
+        !isNaN(m.latitude) && 
+        !isNaN(m.longitude) &&
+        m.latitude >= -90 && 
+        m.latitude <= 90 &&
+        m.longitude >= -180 && 
+        m.longitude <= 180;
+      // #region agent log
+      if (!isValid) fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'enhanced-map.tsx:104',message:'Invalid marker in EnhancedMap',data:{marker:m,latType:typeof m?.latitude,lngType:typeof m?.longitude,lat:m?.latitude,lng:m?.longitude},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      return isValid;
+    }
+  );
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'enhanced-map.tsx:115',message:'EnhancedMap markers processed',data:{inputMarkersCount:markers?.length||0,validMarkersCount:validMarkers.length,validMarkers},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+  }, [markers, validMarkers.length]);
+  // #endregion
+
   const [viewState, setViewState] = useState<MapViewState>({
-    longitude: center.lng,
-    latitude: center.lat,
-    zoom,
+    longitude: safeCenter.lng,
+    latitude: safeCenter.lat,
+    zoom: zoom || 12,
     bearing: 0,
     pitch: enable3D ? 60 : 0,
   });
@@ -106,10 +141,21 @@ export function EnhancedMap({
 
   // Get Mapbox token from environment
   const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'enhanced-map.tsx:128',message:'Mapbox token check',data:{hasToken:!!MAPBOX_TOKEN,tokenLength:MAPBOX_TOKEN?.length,tokenPrefix:MAPBOX_TOKEN?.substring(0,7)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  }, []);
+  // #endregion
 
   // Initialize 3D buildings and terrain when map loads
   const onMapLoad = useCallback(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'enhanced-map.tsx:131',message:'onMapLoad called',data:{hasMapRef:!!mapRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     const map = mapRef.current?.getMap();
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'enhanced-map.tsx:133',message:'Map instance check',data:{hasMap:!!map},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     if (!map) return;
 
     // Add 3D buildings layer
@@ -295,7 +341,7 @@ export function EnhancedMap({
         )}
 
         {/* Markers */}
-        {markers.map((marker) => {
+        {validMarkers.map((marker) => {
           const Icon = getMarkerIcon(marker);
           const isSelected = selectedMarker === marker.id;
           const isHovered = hoveredMarker === marker.id;

@@ -7,7 +7,8 @@ export async function GET(
   { params }: { params: Promise<{ trackingId: string }> }
 ) {
   try {
-    const { trackingId } = await params;
+    const resolvedParams = await params;
+    const trackingId = resolvedParams.trackingId;
 
     if (!trackingId) {
       return NextResponse.json(

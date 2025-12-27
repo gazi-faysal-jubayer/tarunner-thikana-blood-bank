@@ -72,35 +72,84 @@ export default function LiveMapPage() {
   const [enableLocation, setEnableLocation] = useState(false);
   const [showDistanceRings, setShowDistanceRings] = useState(false);
   const [distanceRings, setDistanceRings] = useState<DistanceRing[]>([]);
-  const [mapCenter] = useState<[number, number]>([90.4125, 23.8103]); // Dhaka center
+  const [mapCenter] = useState({ lat: 23.8103, lng: 90.4125 }); // Dhaka center
 
   useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:77',message:'useEffect triggered - fetchRequests called',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     fetchRequests();
   }, []);
 
   const fetchRequests = async () => {
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:82',message:'fetchRequests entry',data:{loading:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       setLoading(true);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:85',message:'Before API fetch',data:{url:'/api/public/map/markers'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       const response = await fetch("/api/public/map/markers");
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:86',message:'API response received',data:{status:response.status,statusText:response.statusText,ok:response.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       const data = await response.json();
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:87',message:'API data parsed',data:{success:data.success,hasData:!!data.data,dataLength:data.data?.length,rawDataSample:data.data?.[0]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       
       if (data.success && data.data) {
-        const markers = data.data.map((m: any) => ({
-          id: m.id,
-          type: "request" as const,
-          latitude: m.latitude,
-          longitude: m.longitude,
-          bloodGroup: m.bloodGroup,
-          urgency: m.urgency as "critical" | "urgent" | "normal",
-          title: m.title,
-          subtitle: m.subtitle,
-          timeAgo: formatTimeAgo(m.createdAt),
-        }));
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:89',message:'Before filtering markers',data:{rawDataLength:data.data.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        const markers = data.data
+          .filter((m: any) => {
+            const isValid = m && 
+              typeof m.latitude === 'number' && 
+              typeof m.longitude === 'number' &&
+              !isNaN(m.latitude) && 
+              !isNaN(m.longitude);
+            // #region agent log
+            if (!isValid) fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:90',message:'Invalid marker filtered out',data:{marker:m,latType:typeof m?.latitude,lngType:typeof m?.longitude},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
+            return isValid;
+          })
+          .map((m: any) => {
+            const marker = {
+              id: m.id,
+              type: "request" as const,
+              latitude: m.latitude,
+              longitude: m.longitude,
+              bloodGroup: m.bloodGroup,
+              urgency: m.urgency as "critical" | "urgent" | "normal",
+              title: m.title,
+              subtitle: m.subtitle,
+              timeAgo: formatTimeAgo(m.createdAt),
+            };
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:96',message:'Marker transformed',data:{hasTitle:!!marker.title,hasSubtitle:!!marker.subtitle,hasBloodGroup:!!marker.bloodGroup,hasUrgency:!!marker.urgency,marker},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
+            return marker;
+          });
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:107',message:'Before setRequests',data:{markersCount:markers.length,markers},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
         setRequests(markers);
+      } else {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:108',message:'API response invalid',data:{success:data.success,hasData:!!data.data,data},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
       }
     } catch (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:110',message:'fetchRequests error',data:{error:error instanceof Error?error.message:String(error),stack:error instanceof Error?error.stack:undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       console.error("Error fetching requests:", error);
     } finally {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:112',message:'fetchRequests finally - setting loading false',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       setLoading(false);
     }
   };
@@ -302,8 +351,9 @@ export default function LiveMapPage() {
             <Card className="h-[700px]">
               <CardContent className="p-0 h-full">
                 <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
-                  <EnhancedMap
-                    markers={filteredRequests.map((req) => ({
+                  {(() => {
+                    // #region agent log
+                    const markersForMap = filteredRequests.map((req) => ({
                       id: req.id,
                       type: req.type,
                       latitude: req.latitude,
@@ -312,14 +362,21 @@ export default function LiveMapPage() {
                       urgency: req.urgency,
                       title: req.title,
                       description: req.subtitle,
-                    }))}
-                    center={mapCenter}
-                    zoom={11}
-                    enable3D={enable3D}
-                    showCurrentLocation={enableLocation}
-                    distanceRings={showDistanceRings ? distanceRings : undefined}
-                    onMarkerClick={(id) => setSelectedMarker(id)}
-                  />
+                    }));
+                    fetch('http://127.0.0.1:7242/ingest/c9cfbb9d-d410-41eb-add3-f4ebacc75e84',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'live-map/page.tsx:314',message:'Rendering EnhancedMap',data:{markersCount:markersForMap.length,filteredRequestsCount:filteredRequests.length,requestsCount:requests.length,markersForMap,mapCenter},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+                    // #endregion
+                    return (
+                      <EnhancedMap
+                        markers={markersForMap}
+                        center={mapCenter}
+                        zoom={11}
+                        enable3D={enable3D}
+                        enableLocationTracking={enableLocation}
+                        distanceRings={showDistanceRings ? distanceRings : undefined}
+                        onMarkerClick={(marker) => setSelectedMarker(marker.id)}
+                      />
+                    );
+                  })()}
                 </Suspense>
               </CardContent>
             </Card>

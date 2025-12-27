@@ -25,7 +25,7 @@ export async function GET() {
 
     if (userError || !user) {
       return NextResponse.json(
-        { authenticated: false, error: "Not authenticated" },
+        { success: false, authenticated: false, error: "Not authenticated" },
         { status: 401 }
       );
     }
@@ -45,6 +45,7 @@ export async function GET() {
     const profile = profiles?.[0];
 
     return NextResponse.json({
+      success: true,
       authenticated: true,
       user: {
         id: user.id,
@@ -56,7 +57,7 @@ export async function GET() {
   } catch (error: any) {
     console.error("Auth me error:", error);
     return NextResponse.json(
-      { authenticated: false, error: error.message },
+      { success: false, authenticated: false, error: error.message },
       { status: 500 }
     );
   }

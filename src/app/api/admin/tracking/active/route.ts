@@ -1,11 +1,11 @@
 import { requireAdmin } from '@/lib/permissions';
-import { createClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 
 export async function GET() {
   try {
     await requireAdmin();
-    const supabase = createClient();
+    const supabase = await createServerSupabaseClient();
 
     const { data, error } = await supabase
       .from('active_tracking')
