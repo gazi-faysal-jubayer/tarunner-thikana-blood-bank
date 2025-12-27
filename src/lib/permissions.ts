@@ -5,7 +5,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
  * Throws error if user is not authenticated or not an admin
  */
 export async function requireAdmin() {
-  const supabase = await createServerSupabaseClient();
+  const supabase: any = await createServerSupabaseClient();
   
   const {
     data: { user },
@@ -34,7 +34,7 @@ export async function requireAdmin() {
 export async function hasPermission(permission: string): Promise<boolean> {
   try {
     const { user } = await requireAdmin();
-    const supabase = await createServerSupabaseClient();
+    const supabase: any = await createServerSupabaseClient();
 
     const { data: admin } = await supabase
       .from('admins')
@@ -80,7 +80,7 @@ export async function isAdmin(): Promise<boolean> {
 export async function getAdminPermissions(): Promise<string[]> {
   try {
     const { user } = await requireAdmin();
-    const supabase = await createServerSupabaseClient();
+    const supabase: any = await createServerSupabaseClient();
 
     const { data: admin } = await supabase
       .from('admins')
@@ -105,7 +105,7 @@ export async function logAdminAction(
 ) {
   try {
     const { user } = await requireAdmin();
-    const supabase = await createServerSupabaseClient();
+    const supabase: any = await createServerSupabaseClient();
 
     await supabase.from('admin_activity_logs').insert({
       admin_id: user.id,

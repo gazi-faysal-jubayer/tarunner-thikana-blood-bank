@@ -47,7 +47,7 @@ interface BloodRequest {
 
 export default function RequestsPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase: any = createClient();
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<UserRole>("donor");
   const [userId, setUserId] = useState<string | null>(null);
@@ -115,7 +115,7 @@ export default function RequestsPage() {
           .eq("assignee_id", donorData.id)
           .eq("type", "donor");
 
-        const requestIds = assignments?.map((a) => a.request_id) || [];
+        const requestIds = assignments?.map((a: any) => a.request_id) || [];
         if (requestIds.length > 0) {
           query = query.in("id", requestIds);
         } else {

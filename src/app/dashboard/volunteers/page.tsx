@@ -47,7 +47,7 @@ interface VolunteerData {
 
 export default function VolunteersPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase: any = createClient();
   const [loading, setLoading] = useState(true);
   const [volunteers, setVolunteers] = useState<VolunteerData[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -97,9 +97,9 @@ export default function VolunteersPage() {
 
       if (volunteersData) {
         setVolunteers(
-          volunteersData.map((v) => ({
+          volunteersData.map((v: any) => ({
             ...v,
-            profile: v.profiles as any,
+            profile: v.profiles,
           }))
         );
       }

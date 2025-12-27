@@ -92,16 +92,16 @@ export default function AssignmentsPage() {
 
       if (assignmentsData) {
         setAssignments(
-          assignmentsData.map((a) => ({
+          assignmentsData.map((a: any) => ({
             id: a.id,
             request_id: a.request_id,
             type: a.type,
             status: a.status,
             created_at: a.created_at,
             assignee_name: "Assignee",
-            request_tracking_id: (a.blood_requests as any)?.tracking_id || "",
-            request_blood_group: (a.blood_requests as any)?.blood_group || "",
-            request_hospital: (a.blood_requests as any)?.hospital_name || "",
+            request_tracking_id: a.blood_requests?.tracking_id || "",
+            request_blood_group: a.blood_requests?.blood_group || "",
+            request_hospital: a.blood_requests?.hospital_name || "",
           }))
         );
       }

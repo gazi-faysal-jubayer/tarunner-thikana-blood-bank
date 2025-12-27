@@ -8,7 +8,7 @@ export async function POST(
 ) {
   try {
     const { user } = await requireAdmin();
-    const supabase = await createServerSupabaseClient();
+    const supabase: any = await createServerSupabaseClient();
     const { id } = await params;
 
     const { error } = await supabase
@@ -17,7 +17,7 @@ export async function POST(
         status: 'approved',
         approved_at: new Date().toISOString(),
       })
-      .eq('id', id) as any;
+      .eq('id', id);
 
     if (error) throw error;
 

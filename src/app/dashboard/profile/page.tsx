@@ -43,7 +43,7 @@ interface DonorData {
 export default function ProfilePage() {
   const router = useRouter();
   const { toast } = useToast();
-  const supabase = createClient();
+  const supabase: any = createClient();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -77,18 +77,19 @@ export default function ProfilePage() {
         .single();
 
       if (profileData) {
+        const p = profileData as any;
         setProfile({
-          id: profileData.id,
-          full_name: profileData.full_name,
-          email: profileData.email,
-          phone: profileData.phone,
-          role: profileData.role,
-          created_at: profileData.created_at,
+          id: p.id,
+          full_name: p.full_name,
+          email: p.email,
+          phone: p.phone,
+          role: p.role,
+          created_at: p.created_at,
         });
         setFormData((prev) => ({
           ...prev,
-          full_name: profileData.full_name || "",
-          phone: profileData.phone || "",
+          full_name: p.full_name || "",
+          phone: p.phone || "",
         }));
       }
 
@@ -101,11 +102,12 @@ export default function ProfilePage() {
           .single();
 
         if (donor) {
-          setDonorData(donor);
+          const d = donor as any;
+          setDonorData(d);
           setFormData((prev) => ({
             ...prev,
-            address: donor.address || "",
-            district: donor.district || "",
+            address: d.address || "",
+            district: d.district || "",
           }));
         }
       }

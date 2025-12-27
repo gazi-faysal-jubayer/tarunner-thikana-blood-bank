@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/client';
  * Get request trends over time
  */
 export async function getRequestTrends(startDate: string, endDate: string) {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data, error } = await supabase
     .from('blood_requests')
@@ -18,7 +18,7 @@ export async function getRequestTrends(startDate: string, endDate: string) {
   // Group by date
   const trendsMap = new Map<string, { total: number; critical: number; completed: number }>();
   
-  data?.forEach((request) => {
+  data?.forEach((request: any) => {
     const date = new Date(request.created_at).toISOString().split('T')[0];
     const current = trendsMap.get(date) || { total: 0, critical: 0, completed: 0 };
     
@@ -50,7 +50,7 @@ export async function getBloodGroupDemand() {
   // Group by blood group
   const demandMap = new Map<string, { total: number; pending: number; critical: number }>();
   
-  data?.forEach((request) => {
+  data?.forEach((request: any) => {
     const current = demandMap.get(request.blood_group) || { total: 0, pending: 0, critical: 0 };
     
     current.total++;
@@ -70,7 +70,7 @@ export async function getBloodGroupDemand() {
  * Get volunteer performance metrics
  */
 export async function getVolunteerPerformance() {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: volunteers, error: volunteersError } = await supabase
     .from('volunteers')
@@ -89,7 +89,7 @@ export async function getVolunteerPerformance() {
 
   // Get assignments for each volunteer
   const volunteersWithAssignments = await Promise.all(
-    volunteers?.map(async (volunteer) => {
+    volunteers?.map(async (volunteer: any) => {
       const { count: totalAssignments } = await supabase
         .from('assignments')
         .select('*', { count: 'exact', head: true })
@@ -105,7 +105,7 @@ export async function getVolunteerPerformance() {
 
       return {
         id: volunteer.id,
-        name: (volunteer.profiles as any).full_name,
+        name: volunteer.profiles.full_name,
         requestsHandled: volunteer.requests_handled,
         donationsFacilitated: volunteer.donations_facilitated,
         successRate: volunteer.success_rate,
@@ -122,7 +122,7 @@ export async function getVolunteerPerformance() {
  * Get geographic distribution of requests
  */
 export async function getGeographicDistribution() {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data, error } = await supabase
     .from('blood_requests')
@@ -138,7 +138,7 @@ export async function getGeographicDistribution() {
     completed: number; 
   }>();
   
-  data?.forEach((request) => {
+  data?.forEach((request: any) => {
     const current = districtMap.get(request.district) || { 
       division: request.division,
       total: 0, 
@@ -165,7 +165,7 @@ export async function getGeographicDistribution() {
  * Get response time analytics
  */
 export async function getResponseTimes() {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data, error } = await supabase
     .from('blood_requests')
@@ -190,7 +190,7 @@ export async function getResponseTimes() {
     normal: { approvalTime: 0, completionTime: 0, count: 0 },
   };
 
-  data?.forEach((request) => {
+  data?.forEach((request: any) => {
     const created = new Date(request.created_at).getTime();
     const approved = request.approved_at ? new Date(request.approved_at).getTime() : null;
     const completed = request.completed_at ? new Date(request.completed_at).getTime() : null;
@@ -226,7 +226,7 @@ export async function getResponseTimes() {
  * Get dashboard statistics
  */
 export async function getDashboardStats() {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const [
     pendingRequests,

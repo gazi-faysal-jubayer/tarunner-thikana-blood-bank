@@ -103,9 +103,9 @@ export default function DonorsPage() {
 
       if (donorsData) {
         setDonors(
-          donorsData.map((d) => ({
+          donorsData.map((d: any) => ({
             ...d,
-            profile: d.profiles as any,
+            profile: d.profiles,
           }))
         );
       }

@@ -68,7 +68,7 @@ export function DonorDashboard() {
   const [recentDonations, setRecentDonations] = useState<Donation[]>([]);
   const [isAvailable, setIsAvailable] = useState(true);
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   useEffect(() => {
     loadDonorData();
@@ -130,16 +130,16 @@ export function DonorDashboard() {
 
         if (assignments) {
           const requests = assignments
-            .filter(a => a.blood_requests)
-            .map(a => ({
-              id: (a.blood_requests as any).id,
-              tracking_id: (a.blood_requests as any).tracking_id,
-              blood_group: (a.blood_requests as any).blood_group,
-              hospital_name: (a.blood_requests as any).hospital_name,
-              urgency: (a.blood_requests as any).urgency,
-              status: (a.blood_requests as any).status,
-              latitude: (a.blood_requests as any).latitude,
-              longitude: (a.blood_requests as any).longitude,
+            .filter((a: any) => a.blood_requests)
+            .map((a: any) => ({
+              id: a.blood_requests.id,
+              tracking_id: a.blood_requests.tracking_id,
+              blood_group: a.blood_requests.blood_group,
+              hospital_name: a.blood_requests.hospital_name,
+              urgency: a.blood_requests.urgency,
+              status: a.blood_requests.status,
+              latitude: a.blood_requests.latitude,
+              longitude: a.blood_requests.longitude,
             }));
           setAssignedRequests(requests);
         }

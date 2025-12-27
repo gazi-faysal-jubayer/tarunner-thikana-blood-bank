@@ -40,7 +40,7 @@ interface PersonalStats {
 
 export default function StatisticsPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase: any = createClient();
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<UserRole>("donor");
   const [stats, setStats] = useState<Stats | null>(null);
@@ -113,7 +113,7 @@ export default function StatisticsPage() {
       .select("blood_group");
 
     const bloodGroupDistribution: Record<string, number> = {};
-    donors?.forEach((d) => {
+    donors?.forEach((d: any) => {
       bloodGroupDistribution[d.blood_group] =
         (bloodGroupDistribution[d.blood_group] || 0) + 1;
     });

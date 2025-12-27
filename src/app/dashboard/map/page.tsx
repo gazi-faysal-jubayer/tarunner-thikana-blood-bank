@@ -80,7 +80,7 @@ export default function MapPage() {
         .neq("status", "cancelled");
 
       if (requests) {
-        requests.forEach((req) => {
+        requests.forEach((req: any) => {
           allMarkers.push({
             id: req.id,
             type: "request",
@@ -112,13 +112,13 @@ export default function MapPage() {
           .not("longitude", "is", null);
 
         if (donors) {
-          donors.forEach((donor) => {
+          donors.forEach((donor: any) => {
             allMarkers.push({
               id: donor.id,
               type: "donor",
               latitude: parseFloat(donor.latitude),
               longitude: parseFloat(donor.longitude),
-              title: (donor.profiles as any)?.full_name || "Donor",
+              title: donor.profiles?.full_name || "Donor",
               description: donor.district,
               blood_group: donor.blood_group,
             });
@@ -231,7 +231,7 @@ export default function MapPage() {
                 title: m.title,
                 description: m.description,
                 bloodGroup: m.blood_group,
-                urgency: m.urgency,
+                urgency: m.urgency as "critical" | "urgent" | "normal" | undefined,
               }))}
               center={{ lat: 23.8103, lng: 90.4125 }} // Dhaka center
               zoom={11}

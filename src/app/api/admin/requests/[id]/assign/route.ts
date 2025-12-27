@@ -12,7 +12,7 @@ export async function POST(
     const { volunteerId, donorId, notes } = body;
     const { id } = await params;
 
-    const supabase = await createServerSupabaseClient();
+    const supabase: any = await createServerSupabaseClient();
 
     // Create assignment
     const { error: assignmentError } = await supabase
@@ -30,6 +30,7 @@ export async function POST(
 
     // Update request status
     const newStatus = volunteerId ? 'volunteer_assigned' : 'donor_assigned';
+    
     const { error: updateError } = await supabase
       .from('blood_requests')
       .update({ status: newStatus })

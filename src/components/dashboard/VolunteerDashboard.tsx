@@ -61,7 +61,7 @@ export function VolunteerDashboard() {
   const [nearbyDonors, setNearbyDonors] = useState(0);
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   useEffect(() => {
     loadVolunteerData();
@@ -107,7 +107,7 @@ export function VolunteerDashboard() {
         .order("created_at", { ascending: false });
 
       if (requests) {
-        setAssignedRequests(requests.map(r => ({
+        setAssignedRequests(requests.map((r: any) => ({
           id: r.id,
           tracking_id: r.tracking_id,
           blood_group: r.blood_group,

@@ -83,7 +83,7 @@ export default function DashboardLayout({
           .select("blood_group")
           .eq("user_id", data.user.id)
           .single();
-        bloodGroup = donorData?.blood_group;
+        bloodGroup = (donorData as any)?.blood_group;
       }
 
       setUser({
