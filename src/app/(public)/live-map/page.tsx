@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import dynamic from "next/dynamic";
-import { MapPin, Filter, Droplet, AlertCircle, RefreshCw, Layers, Navigation2 } from "lucide-react";
+import { MapPin, Filter, Droplet, AlertCircle, RefreshCw, Layers, Navigation2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +20,7 @@ import type { DistanceRing } from "@/components/maps/types";
 // Dynamically import map components with no SSR
 const EnhancedMap = dynamic(
   () => import("@/components/maps/enhanced-map").then((mod) => mod.EnhancedMap),
-  { ssr: false, loading: () => <div className="flex items-center justify-center h-[600px] bg-muted">Loading map...</div> }
+  { ssr: false, loading: () => <div className="flex items-center justify-center h-[600px] bg-muted"><Loader2 className="h-8 w-8 animate-spin" /></div> }
 );
 
 const DistanceRingControls = dynamic(
@@ -36,55 +36,35 @@ const urgencyLevels = [
   { value: "normal", label: "সাধারণ" },
 ];
 
-// Mock request data
-const mockRequests = [
-  {
-    id: "1",
-    type: "request" as const,
-    latitude: 23.8103,
-    longitude: 90.4125,
-    bloodGroup: "A+",
-    urgency: "critical" as const,
-    title: "ঢাকা মেডিকেল কলেজ",
-    subtitle: "২ ব্যাগ প্রয়োজন",
-    timeAgo: "৫ মিনিট আগে",
-  },
-  {
-    id: "2",
-    type: "request" as const,
-    latitude: 23.78,
-    longitude: 90.42,
-    bloodGroup: "O-",
-    urgency: "urgent" as const,
-    title: "স্কয়ার হাসপাতাল",
-    subtitle: "১ ব্যাগ প্রয়োজন",
-    timeAgo: "১৫ মিনিট আগে",
-  },
-  {
-    id: "3",
-    type: "request" as const,
-    latitude: 23.75,
-    longitude: 90.38,
-    bloodGroup: "B+",
-    urgency: "normal" as const,
-    title: "ইউনাইটেড হাসপাতাল",
-    subtitle: "৩ ব্যাগ প্রয়োজন",
-    timeAgo: "৩০ মিনিট আগে",
-  },
-  {
-    id: "4",
-    type: "request" as const,
-    latitude: 23.85,
-    longitude: 90.4,
-    bloodGroup: "AB+",
-    urgency: "critical" as const,
-    title: "ল্যাব এইড হাসপাতাল",
-    subtitle: "১ ব্যাগ প্রয়োজন",
-    timeAgo: "১০ মিনিট আগে",
-  },
-];
+interface RequestMarker {
+  id: string;
+  type: "request";
+  latitude: number;
+  longitude: number;
+  bloodGroup: string;
+  urgency: "critical" | "urgent" | "normal";
+  title: string;
+  subtitle: string;
+  timeAgo: string;
+}
+
+function formatTimeAgo(dateString: string): string {
+  const now = new Date();
+  const date = new Date(dateString);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins < 1) return "এইমাত্র";
+  if (diffMins < 60) return `${diffMins} মিনিট আগে`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours} ঘন্টা আগে`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} দিন আগে`;
+}
 
 export default function LiveMapPage() {
+  const [requests, setRequests] = useState<RequestMarker[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedBloodGroup, setSelectedBloodGroup] = useState("সব");
   const [selectedUrgency, setSelectedUrgency] = useState("all");
   const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
@@ -94,8 +74,39 @@ export default function LiveMapPage() {
   const [distanceRings, setDistanceRings] = useState<DistanceRing[]>([]);
   const [mapCenter] = useState<[number, number]>([90.4125, 23.8103]); // Dhaka center
 
+  useEffect(() => {
+    fetchRequests();
+  }, []);
+
+  const fetchRequests = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch("/api/public/map/markers");
+      const data = await response.json();
+      
+      if (data.success && data.data) {
+        const markers = data.data.map((m: any) => ({
+          id: m.id,
+          type: "request" as const,
+          latitude: m.latitude,
+          longitude: m.longitude,
+          bloodGroup: m.bloodGroup,
+          urgency: m.urgency as "critical" | "urgent" | "normal",
+          title: m.title,
+          subtitle: m.subtitle,
+          timeAgo: formatTimeAgo(m.createdAt),
+        }));
+        setRequests(markers);
+      }
+    } catch (error) {
+      console.error("Error fetching requests:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Filter requests based on selection
-  const filteredRequests = mockRequests.filter((req) => {
+  const filteredRequests = requests.filter((req) => {
     if (selectedBloodGroup !== "সব" && req.bloodGroup !== selectedBloodGroup)
       return false;
     if (selectedUrgency !== "all" && req.urgency !== selectedUrgency)
@@ -103,149 +114,180 @@ export default function LiveMapPage() {
     return true;
   });
 
+  const getUrgencyColor = (urgency: string) => {
+    switch (urgency) {
+      case "critical":
+        return "bg-red-500 text-white";
+      case "urgent":
+        return "bg-orange-500 text-white";
+      default:
+        return "bg-blue-500 text-white";
+    }
+  };
+
+  const getUrgencyLabel = (urgency: string) => {
+    switch (urgency) {
+      case "critical":
+        return "জরুরি";
+      case "urgent":
+        return "দ্রুত";
+      default:
+        return "সাধারণ";
+    }
+  };
+
   return (
     <div className="min-h-screen bg-muted/30">
       {/* Header */}
-      <div className="bg-blood-600 text-white py-8">
-        <div className="container">
-          <div className="flex items-center gap-2 mb-2">
-            <MapPin className="h-6 w-6" />
-            <h1 className="text-2xl font-bold">লাইভ ম্যাপ</h1>
+      <div className="bg-white border-b shadow-sm">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold flex items-center gap-2">
+                <MapPin className="h-6 w-6 text-blood-600" />
+                লাইভ রক্তের অনুরোধ ম্যাপ
+              </h1>
+              <p className="text-muted-foreground text-sm">
+                বাংলাদেশে বর্তমান রক্তের অনুরোধ দেখুন
+              </p>
+            </div>
+            <Button onClick={fetchRequests} variant="outline" disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+              রিফ্রেশ
+            </Button>
           </div>
-          <p className="opacity-90">
-            রিয়েল-টাইমে সক্রিয় রক্তের অনুরোধগুলো দেখুন
-          </p>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="container py-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">ফিল্টার:</span>
-              </div>
-
-              <Select value={selectedBloodGroup} onValueChange={setSelectedBloodGroup}>
-                <SelectTrigger className="w-[120px]">
-                  <SelectValue placeholder="রক্তের গ্রুপ" />
-                </SelectTrigger>
-                <SelectContent>
-                  {bloodGroups.map((group) => (
-                    <SelectItem key={group} value={group}>
-                      {group}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={selectedUrgency} onValueChange={setSelectedUrgency}>
-                <SelectTrigger className="w-[120px]">
-                  <SelectValue placeholder="জরুরিতা" />
-                </SelectTrigger>
-                <SelectContent>
-                  {urgencyLevels.map((level) => (
-                    <SelectItem key={level.value} value={level.value}>
-                      {level.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Button variant="outline" size="sm" className="ml-auto">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                রিফ্রেশ
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Main Content */}
-      <div className="container pb-8">
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Map */}
-          <div className="lg:col-span-2 relative">
-            <EnhancedMap
-              markers={filteredRequests}
-              height="600px"
-              onMarkerClick={(marker) => setSelectedMarker(marker.id)}
-              selectedMarker={selectedMarker}
-              enable3D={enable3D}
-              enableLocationTracking={enableLocation}
-              distanceRings={distanceRings}
-              style="streets"
-            />
-            
-            {/* Distance Ring Controls Overlay */}
-            {showDistanceRings && (
-              <DistanceRingControls
-                center={mapCenter}
-                onChange={setDistanceRings}
-                enabled={showDistanceRings}
-              />
-            )}
-          </div>
-
-          {/* Request List */}
+      <div className="container mx-auto px-4 py-6">
+        <div className="grid lg:grid-cols-4 gap-6">
+          {/* Sidebar - Filters and Request List */}
           <div className="space-y-4">
+            {/* Filters */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <AlertCircle className="h-5 w-5 text-blood-600" />
-                  সক্রিয় অনুরোধ ({filteredRequests.length})
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Filter className="h-4 w-4" />
+                  ফিল্টার
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {filteredRequests.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">
+              <CardContent className="space-y-4">
+                {/* Blood Group Filter */}
+                <div className="space-y-2">
+                  <Label className="text-xs">রক্তের গ্রুপ</Label>
+                  <Select
+                    value={selectedBloodGroup}
+                    onValueChange={setSelectedBloodGroup}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {bloodGroups.map((bg) => (
+                        <SelectItem key={bg} value={bg}>
+                          {bg}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Urgency Filter */}
+                <div className="space-y-2">
+                  <Label className="text-xs">জরুরিতা</Label>
+                  <Select
+                    value={selectedUrgency}
+                    onValueChange={setSelectedUrgency}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {urgencyLevels.map((level) => (
+                        <SelectItem key={level.value} value={level.value}>
+                          {level.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Map Options */}
+                <div className="space-y-3 pt-2 border-t">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="3d-mode" className="text-xs flex items-center gap-1">
+                      <Layers className="h-3 w-3" />
+                      ৩ডি মোড
+                    </Label>
+                    <Switch
+                      id="3d-mode"
+                      checked={enable3D}
+                      onCheckedChange={setEnable3D}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="location" className="text-xs flex items-center gap-1">
+                      <Navigation2 className="h-3 w-3" />
+                      আমার অবস্থান
+                    </Label>
+                    <Switch
+                      id="location"
+                      checked={enableLocation}
+                      onCheckedChange={setEnableLocation}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Request List */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    অনুরোধ ({filteredRequests.length})
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 max-h-[400px] overflow-y-auto">
+                {loading ? (
+                  <div className="text-center py-4 text-muted-foreground">
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                    লোড হচ্ছে...
+                  </div>
+                ) : filteredRequests.length === 0 ? (
+                  <div className="text-center py-4 text-muted-foreground text-sm">
                     কোনো অনুরোধ পাওয়া যায়নি
-                  </p>
+                  </div>
                 ) : (
-                  filteredRequests.map((request) => (
+                  filteredRequests.map((req) => (
                     <div
-                      key={request.id}
+                      key={req.id}
+                      onClick={() => setSelectedMarker(req.id)}
                       className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                        selectedMarker === request.id
-                          ? "border-blood-600 bg-blood-50"
-                          : "hover:border-blood-300"
+                        selectedMarker === req.id
+                          ? "border-blood-500 bg-blood-50"
+                          : "border-border hover:border-blood-200"
                       }`}
-                      onClick={() => setSelectedMarker(request.id)}
                     >
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                            request.urgency === "critical"
-                              ? "bg-urgency-critical"
-                              : request.urgency === "urgent"
-                              ? "bg-urgency-urgent"
-                              : "bg-urgency-normal"
-                          } text-white`}
-                        >
-                          <span className="font-bold">{request.bloodGroup}</span>
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Badge
-                              variant={request.urgency}
-                              className="text-xs"
-                            >
-                              {request.urgency === "critical"
-                                ? "জরুরি"
-                                : request.urgency === "urgent"
-                                ? "দ্রুত"
-                                : "সাধারণ"}
+                      <div className="flex items-start gap-2">
+                        <Badge className={`${getUrgencyColor(req.urgency)} text-xs shrink-0`}>
+                          {req.bloodGroup}
+                        </Badge>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{req.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {req.subtitle}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-xs">
+                              {getUrgencyLabel(req.urgency)}
                             </Badge>
                             <span className="text-xs text-muted-foreground">
-                              {request.timeAgo}
+                              {req.timeAgo}
                             </span>
                           </div>
-                          <p className="font-medium text-sm">{request.title}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {request.subtitle}
-                          </p>
                         </div>
                       </div>
                     </div>
@@ -253,44 +295,75 @@ export default function LiveMapPage() {
                 )}
               </CardContent>
             </Card>
+          </div>
 
-            {/* Statistics */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">পরিসংখ্যান</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-3 bg-blood-50 rounded-lg">
-                    <p className="text-2xl font-bold text-blood-600">
-                      {mockRequests.filter((r) => r.urgency === "critical").length}
-                    </p>
-                    <p className="text-xs text-muted-foreground">জরুরি</p>
-                  </div>
-                  <div className="text-center p-3 bg-orange-50 rounded-lg">
-                    <p className="text-2xl font-bold text-orange-600">
-                      {mockRequests.filter((r) => r.urgency === "urgent").length}
-                    </p>
-                    <p className="text-xs text-muted-foreground">দ্রুত</p>
-                  </div>
-                  <div className="text-center p-3 bg-green-50 rounded-lg">
-                    <p className="text-2xl font-bold text-green-600">
-                      {mockRequests.filter((r) => r.urgency === "normal").length}
-                    </p>
-                    <p className="text-xs text-muted-foreground">সাধারণ</p>
-                  </div>
-                  <div className="text-center p-3 bg-blue-50 rounded-lg">
-                    <p className="text-2xl font-bold text-blue-600">১২৫</p>
-                    <p className="text-xs text-muted-foreground">উপলব্ধ দাতা</p>
-                  </div>
-                </div>
+          {/* Map */}
+          <div className="lg:col-span-3">
+            <Card className="h-[700px]">
+              <CardContent className="p-0 h-full">
+                <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+                  <EnhancedMap
+                    markers={filteredRequests.map((req) => ({
+                      id: req.id,
+                      type: req.type,
+                      latitude: req.latitude,
+                      longitude: req.longitude,
+                      bloodGroup: req.bloodGroup,
+                      urgency: req.urgency,
+                      title: req.title,
+                      description: req.subtitle,
+                    }))}
+                    center={mapCenter}
+                    zoom={11}
+                    enable3D={enable3D}
+                    showCurrentLocation={enableLocation}
+                    distanceRings={showDistanceRings ? distanceRings : undefined}
+                    onMarkerClick={(id) => setSelectedMarker(id)}
+                  />
+                </Suspense>
               </CardContent>
             </Card>
           </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+          <Card>
+            <CardContent className="p-4 text-center">
+              <Droplet className="h-6 w-6 mx-auto mb-2 text-red-500" />
+              <p className="text-2xl font-bold">
+                {filteredRequests.filter((r) => r.urgency === "critical").length}
+              </p>
+              <p className="text-xs text-muted-foreground">জরুরি অনুরোধ</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <Droplet className="h-6 w-6 mx-auto mb-2 text-orange-500" />
+              <p className="text-2xl font-bold">
+                {filteredRequests.filter((r) => r.urgency === "urgent").length}
+              </p>
+              <p className="text-xs text-muted-foreground">দ্রুত অনুরোধ</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <Droplet className="h-6 w-6 mx-auto mb-2 text-blue-500" />
+              <p className="text-2xl font-bold">
+                {filteredRequests.filter((r) => r.urgency === "normal").length}
+              </p>
+              <p className="text-xs text-muted-foreground">সাধারণ অনুরোধ</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <MapPin className="h-6 w-6 mx-auto mb-2 text-blood-500" />
+              <p className="text-2xl font-bold">{filteredRequests.length}</p>
+              <p className="text-xs text-muted-foreground">মোট অনুরোধ</p>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
   );
 }
-
-

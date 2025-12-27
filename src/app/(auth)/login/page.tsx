@@ -64,15 +64,9 @@ export default function LoginPage() {
         description: `স্বাগতম, ${result.user.name || result.user.email}!`,
       });
 
-      // Redirect based on role
-      const redirectUrl = 
-        result.role === "admin" ? "/dashboard/admin" :
-        result.role === "volunteer" ? "/dashboard/volunteer" :
-        result.role === "donor" ? "/dashboard/donor" :
-        "/dashboard";
-
-      // Use window.location for hard redirect (ensures cookies are set)
-      window.location.href = redirectUrl;
+      // All roles redirect to unified dashboard
+      // The dashboard page will render role-specific content
+      window.location.href = "/dashboard";
 
     } catch (error: any) {
       console.error("Login error:", error);
@@ -176,8 +170,8 @@ export default function LoginPage() {
             <div className="mt-4 p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
               <p className="font-medium mb-1">টেস্ট অ্যাকাউন্ট:</p>
               <p>Admin: gazi.faysal.jubayer@gmail.com / Admin@123456</p>
-              <p>Donor: testdonor@gmail.com / Donor@123456</p>
-              <p>Volunteer: testvolunteer@gmail.com / Volunteer@123456</p>
+              <p>Volunteer: volunteer1@blooddonation.org / Volunteer@123</p>
+              <p>Donor: donor1@blooddonation.org / Donor@123</p>
             </div>
           </CardContent>
         </Card>

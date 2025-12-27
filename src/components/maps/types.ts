@@ -77,3 +77,4 @@ export interface MapInteractionHandlers {
   onMarkerHover?: (marker: MapMarker | null) => void;
 }
 
+

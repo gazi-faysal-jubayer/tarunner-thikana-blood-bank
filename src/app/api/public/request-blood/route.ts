@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateTrackingId } from "@/lib/utils";
 import { bloodRequestSchema } from "@/lib/validations/blood-request";
 import { sendNotification } from "@/lib/services/notifications";
-
-// Mock database for development
-const mockDatabase: Record<string, unknown>[] = [];
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 export async function POST(request: NextRequest) {
   try {
@@ -42,51 +41,51 @@ export async function POST(request: NextRequest) {
       urgency = "urgent";
     }
 
-    // Create the blood request record
-    const bloodRequest = {
-      id: crypto.randomUUID(),
-      tracking_id: trackingId,
-      requester_type: "public",
-      requester_name: data.requesterName,
-      requester_phone: data.requesterPhone,
-      requester_email: data.requesterEmail || null,
-      patient_name: data.patientName,
-      patient_age: data.patientAge || null,
-      patient_gender: data.patientGender || null,
-      blood_group: data.bloodGroup,
-      units_needed: data.unitsNeeded,
-      hospital_name: data.hospitalName,
-      hospital_address: data.hospitalAddress,
-      latitude: data.latitude,
-      longitude: data.longitude,
-      district: data.district,
-      division: data.division,
-      reason: data.reason || null,
-      needed_by: data.neededBy,
-      is_emergency: isEmergency,
-      urgency,
-      status: "submitted",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+    // Create Supabase client using service role for public submissions
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-    // In mock mode, store in memory
-    // In production, this would insert into Supabase
-    const isMockMode = process.env.NEXT_PUBLIC_MOCK_SERVICES === "true";
-    
-    if (isMockMode) {
-      mockDatabase.push(bloodRequest);
-      console.log("[MOCK DB] Blood request created:", trackingId);
-    } else {
-      // Real Supabase implementation would go here
-      // const { createServiceRoleClient } = await import("@/lib/supabase/server");
-      // const supabase = await createServiceRoleClient();
-      // const { error } = await supabase.from("blood_requests").insert(bloodRequest);
-      // if (error) throw error;
-      
-      // For now, use mock
-      mockDatabase.push(bloodRequest);
+    // Insert into database using service role
+    const response = await fetch(`${supabaseUrl}/rest/v1/blood_requests`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": serviceRoleKey,
+        "Authorization": `Bearer ${serviceRoleKey}`,
+        "Prefer": "return=representation",
+      },
+      body: JSON.stringify({
+        tracking_id: trackingId,
+        requester_type: "public",
+        requester_name: data.requesterName,
+        requester_phone: data.requesterPhone,
+        requester_email: data.requesterEmail || null,
+        patient_name: data.patientName,
+        patient_age: data.patientAge || null,
+        patient_gender: data.patientGender || null,
+        blood_group: data.bloodGroup,
+        units_needed: data.unitsNeeded,
+        hospital_name: data.hospitalName,
+        hospital_address: data.hospitalAddress,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        district: data.district,
+        division: data.division,
+        reason: data.reason || null,
+        needed_by: data.neededBy,
+        is_emergency: isEmergency,
+        urgency,
+        status: "submitted",
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error("Database error:", error);
+      throw new Error("Failed to create blood request");
     }
+
+    const [bloodRequest] = await response.json();
 
     // Send email notification
     if (data.requesterEmail) {
@@ -102,10 +101,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // For emergency requests, also notify nearby donors
+    // For emergency requests, log notification
     if (isEmergency) {
       console.log("[EMERGENCY] Would notify nearby donors for:", trackingId);
-      // In production, this would trigger emergency notifications
     }
 
     return NextResponse.json({
@@ -130,9 +128,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
-// Export mock database for tracking API
-export function getMockRequests() {
-  return mockDatabase;
-}
-

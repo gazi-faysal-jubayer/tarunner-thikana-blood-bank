@@ -59,7 +59,7 @@ interface Donation {
   units_donated: number;
 }
 
-export default function DonorDashboardPage() {
+export function DonorDashboard() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -107,44 +107,44 @@ export default function DonorDashboardPage() {
       }
 
       // Get assigned requests (where donor is assigned)
-      const { data: assignments } = await supabase
-        .from("assignments")
-        .select(`
-          id,
-          status,
-          blood_requests (
-            id,
-            tracking_id,
-            blood_group,
-            hospital_name,
-            urgency,
-            status,
-            latitude,
-            longitude
-          )
-        `)
-        .eq("assignee_id", donorData?.id)
-        .eq("type", "donor")
-        .in("status", ["pending", "accepted"]);
-
-      if (assignments) {
-        const requests = assignments
-          .filter(a => a.blood_requests)
-          .map(a => ({
-            id: (a.blood_requests as any).id,
-            tracking_id: (a.blood_requests as any).tracking_id,
-            blood_group: (a.blood_requests as any).blood_group,
-            hospital_name: (a.blood_requests as any).hospital_name,
-            urgency: (a.blood_requests as any).urgency,
-            status: (a.blood_requests as any).status,
-            latitude: (a.blood_requests as any).latitude,
-            longitude: (a.blood_requests as any).longitude,
-          }));
-        setAssignedRequests(requests);
-      }
-
-      // Get recent donations
       if (donorData?.id) {
+        const { data: assignments } = await supabase
+          .from("assignments")
+          .select(`
+            id,
+            status,
+            blood_requests (
+              id,
+              tracking_id,
+              blood_group,
+              hospital_name,
+              urgency,
+              status,
+              latitude,
+              longitude
+            )
+          `)
+          .eq("assignee_id", donorData.id)
+          .eq("type", "donor")
+          .in("status", ["pending", "accepted"]);
+
+        if (assignments) {
+          const requests = assignments
+            .filter(a => a.blood_requests)
+            .map(a => ({
+              id: (a.blood_requests as any).id,
+              tracking_id: (a.blood_requests as any).tracking_id,
+              blood_group: (a.blood_requests as any).blood_group,
+              hospital_name: (a.blood_requests as any).hospital_name,
+              urgency: (a.blood_requests as any).urgency,
+              status: (a.blood_requests as any).status,
+              latitude: (a.blood_requests as any).latitude,
+              longitude: (a.blood_requests as any).longitude,
+            }));
+          setAssignedRequests(requests);
+        }
+
+        // Get recent donations
         const { data: donations } = await supabase
           .from("donations")
           .select("id, donation_date, donation_location, units_donated")
@@ -413,7 +413,7 @@ export default function DonorDashboardPage() {
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="text-lg">সাম্প্রতিক রক্তদান</CardTitle>
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/dashboard/donor/history">
+            <Link href="/dashboard/statistics">
               সব দেখুন
               <ArrowRight className="h-4 w-4 ml-1" />
             </Link>
@@ -456,3 +456,5 @@ export default function DonorDashboardPage() {
     </div>
   );
 }
+
+

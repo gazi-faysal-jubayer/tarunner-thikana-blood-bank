@@ -53,7 +53,7 @@ interface AssignedRequest {
   longitude: number;
 }
 
-export default function VolunteerDashboardPage() {
+export function VolunteerDashboard() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [volunteer, setVolunteer] = useState<VolunteerData | null>(null);
@@ -235,7 +235,7 @@ export default function VolunteerDashboardPage() {
               আপনার অনুরোধ ({assignedRequests.length})
             </CardTitle>
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/dashboard/volunteer/requests">
+              <Link href="/dashboard/requests">
                 সব দেখুন
                 <ArrowRight className="h-4 w-4 ml-1" />
               </Link>
@@ -249,7 +249,7 @@ export default function VolunteerDashboardPage() {
                 <p className="text-sm mt-2">নতুন অনুরোধ আসলে আপনাকে জানানো হবে</p>
               </div>
             ) : (
-              assignedRequests.map((request) => (
+              assignedRequests.slice(0, 5).map((request) => (
                 <div
                   key={request.id}
                   onClick={() => setSelectedRequest(request.id)}
@@ -298,8 +298,10 @@ export default function VolunteerDashboardPage() {
                       </div>
                     </div>
 
-                    <Button variant="blood" size="sm">
-                      দাতা খুঁজুন
+                    <Button variant="blood" size="sm" asChild>
+                      <Link href="/dashboard/donors">
+                        দাতা খুঁজুন
+                      </Link>
                     </Button>
                   </div>
                 </div>
@@ -339,12 +341,12 @@ export default function VolunteerDashboardPage() {
               <div className="h-[200px] bg-muted rounded-xl flex items-center justify-center">
                 <div className="text-center text-muted-foreground">
                   <MapPin className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">ম্যাপ দেখতে বড় স্ক্রিনে যান</p>
+                  <p className="text-sm">ম্যাপ দেখতে ম্যাপ পেজে যান</p>
                 </div>
               </div>
 
               <Button variant="outline" className="w-full" asChild>
-                <Link href="/dashboard/volunteer/map">
+                <Link href="/dashboard/map">
                   <MapPin className="h-4 w-4 mr-2" />
                   বড় ম্যাপ দেখুন
                 </Link>
@@ -366,7 +368,7 @@ export default function VolunteerDashboardPage() {
               className="h-auto py-4 flex flex-col items-center gap-2"
               asChild
             >
-              <Link href="/dashboard/volunteer/donors">
+              <Link href="/dashboard/donors">
                 <Users className="h-6 w-6 text-blood-600" />
                 <span>রক্তদাতা খুঁজুন</span>
               </Link>
@@ -376,7 +378,7 @@ export default function VolunteerDashboardPage() {
               className="h-auto py-4 flex flex-col items-center gap-2"
               asChild
             >
-              <Link href="/dashboard/volunteer/map">
+              <Link href="/dashboard/map">
                 <MapPin className="h-6 w-6 text-blood-600" />
                 <span>ম্যাপ দেখুন</span>
               </Link>
@@ -386,9 +388,9 @@ export default function VolunteerDashboardPage() {
               className="h-auto py-4 flex flex-col items-center gap-2"
               asChild
             >
-              <Link href="/dashboard/volunteer/history">
+              <Link href="/dashboard/statistics">
                 <ClipboardList className="h-6 w-6 text-blood-600" />
-                <span>ইতিহাস দেখুন</span>
+                <span>পরিসংখ্যান দেখুন</span>
               </Link>
             </Button>
           </div>
@@ -397,3 +399,5 @@ export default function VolunteerDashboardPage() {
     </div>
   );
 }
+
+

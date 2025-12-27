@@ -1,23 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   Droplet,
   Heart,
   Menu,
-  X,
-  Home,
-  User,
-  MapPin,
   Bell,
   Settings,
   LogOut,
-  Users,
-  ClipboardList,
-  BarChart3,
-  Shield,
+  User,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -29,57 +23,117 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { RoleBasedSidebar } from "@/components/dashboard/RoleBasedSidebar";
+import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
-// Mock user data - in production, get from auth context
-const mockUser = {
-  name: "মোহাম্মদ রাহিম",
-  email: "rahim@example.com",
-  role: "donor" as const,
-  avatar: null,
-  bloodGroup: "A+",
-};
+type UserRole = "admin" | "volunteer" | "donor";
 
-const roleNavItems = {
-  donor: [
-    { href: "/dashboard/donor", label: "ড্যাশবোর্ড", icon: Home },
-    { href: "/dashboard/donor/profile", label: "প্রোফাইল", icon: User },
-    { href: "/dashboard/donor/requests", label: "অনুরোধ", icon: ClipboardList },
-    { href: "/dashboard/donor/history", label: "ইতিহাস", icon: BarChart3 },
-  ],
-  volunteer: [
-    { href: "/dashboard/volunteer", label: "ড্যাশবোর্ড", icon: Home },
-    { href: "/dashboard/volunteer/requests", label: "অনুরোধ", icon: ClipboardList },
-    { href: "/dashboard/volunteer/donors", label: "রক্তদাতা", icon: Users },
-    { href: "/dashboard/volunteer/map", label: "ম্যাপ", icon: MapPin },
-  ],
-  admin: [
-    { href: "/dashboard/admin", label: "ড্যাশবোর্ড", icon: Home },
-    { href: "/dashboard/admin/requests", label: "অনুরোধ", icon: ClipboardList },
-    { href: "/dashboard/admin/volunteers", label: "স্বেচ্ছাসেবক", icon: Users },
-    { href: "/dashboard/admin/donors", label: "রক্তদাতা", icon: Heart },
-    { href: "/dashboard/admin/analytics", label: "বিশ্লেষণ", icon: BarChart3 },
-    { href: "/dashboard/admin/settings", label: "সেটিংস", icon: Settings },
-  ],
-};
+interface UserData {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  avatar?: string | null;
+  bloodGroup?: string;
+}
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const pathname = usePathname();
+  const router = useRouter();
+  const { toast } = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [user, setUser] = useState<UserData | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Determine role from pathname
-  const role = pathname.includes("/admin")
-    ? "admin"
-    : pathname.includes("/volunteer")
-    ? "volunteer"
-    : "donor";
+  const supabase = createClient();
 
-  const navItems = roleNavItems[role];
+  useEffect(() => {
+    loadUser();
+  }, []);
+
+  const loadUser = async () => {
+    try {
+      const response = await fetch("/api/auth/me");
+      const data = await response.json();
+
+      if (!data.success || !data.user) {
+        router.push("/login");
+        return;
+      }
+
+      // Get additional data (blood group for donors)
+      let bloodGroup: string | undefined;
+      if (data.role === "donor") {
+        const { data: donorData } = await supabase
+          .from("donors")
+          .select("blood_group")
+          .eq("user_id", data.user.id)
+          .single();
+        bloodGroup = donorData?.blood_group;
+      }
+
+      setUser({
+        id: data.user.id,
+        name: data.user.name || data.user.email,
+        email: data.user.email,
+        role: data.role as UserRole,
+        avatar: null,
+        bloodGroup,
+      });
+    } catch (error) {
+      console.error("Error loading user:", error);
+      router.push("/login");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      toast({
+        title: "লগআউট সফল",
+        description: "আপনি সফলভাবে লগআউট করেছেন",
+      });
+      router.push("/login");
+    } catch (error) {
+      toast({
+        title: "ত্রুটি",
+        description: "লগআউট করতে সমস্যা হয়েছে",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getRoleTitle = (role: UserRole) => {
+    switch (role) {
+      case "admin":
+        return "অ্যাডমিন ড্যাশবোর্ড";
+      case "volunteer":
+        return "স্বেচ্ছাসেবক ড্যাশবোর্ড";
+      case "donor":
+        return "রক্তদাতা ড্যাশবোর্ড";
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/30">
+        <div className="text-center">
+          <Loader2 className="h-10 w-10 animate-spin text-blood-600 mx-auto mb-4" />
+          <p className="text-muted-foreground">লোড হচ্ছে...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -92,97 +146,11 @@ export default function DashboardLayout({
       )}
 
       {/* Sidebar */}
-      <aside
-        className={cn(
-          "fixed top-0 left-0 z-50 h-full w-64 bg-white shadow-lg transform transition-transform lg:translate-x-0",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        )}
-      >
-        {/* Logo */}
-        <div className="flex items-center justify-between p-4 border-b">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="relative">
-              <Droplet className="h-8 w-8 text-blood-600 fill-blood-600" />
-              <Heart className="absolute -bottom-1 -right-1 h-4 w-4 text-blood-500 fill-blood-500" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-bold text-sm leading-tight text-blood-700">
-                তারুণ্যের ঠিকানা
-              </span>
-              <span className="text-xs text-muted-foreground">Blood Bank</span>
-            </div>
-          </Link>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {/* Role badge */}
-        <div className="p-4 border-b">
-          <Badge
-            variant={role === "admin" ? "destructive" : role === "volunteer" ? "default" : "secondary"}
-            className="w-full justify-center py-1"
-          >
-            <Shield className="h-3 w-3 mr-1" />
-            {role === "admin"
-              ? "অ্যাডমিন"
-              : role === "volunteer"
-              ? "স্বেচ্ছাসেবক"
-              : "রক্তদাতা"}
-          </Badge>
-        </div>
-
-        {/* Navigation */}
-        <nav className="p-4 space-y-1">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setSidebarOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                  isActive
-                    ? "bg-blood-50 text-blood-700"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                <item.icon className="h-5 w-5" />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* User info at bottom */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-white">
-          <div className="flex items-center gap-3">
-            <Avatar>
-              <AvatarImage src={mockUser.avatar || undefined} />
-              <AvatarFallback className="bg-blood-100 text-blood-700">
-                {mockUser.name.charAt(0)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{mockUser.name}</p>
-              <p className="text-xs text-muted-foreground truncate">
-                {mockUser.email}
-              </p>
-            </div>
-            {mockUser.bloodGroup && (
-              <Badge variant="outline" className="shrink-0">
-                {mockUser.bloodGroup}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </aside>
+      <RoleBasedSidebar
+        user={user}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
       {/* Main content */}
       <div className="lg:pl-64">
@@ -198,13 +166,7 @@ export default function DashboardLayout({
           </Button>
 
           <div className="flex-1 lg:ml-0 ml-4">
-            <h1 className="text-lg font-semibold">
-              {role === "admin"
-                ? "অ্যাডমিন ড্যাশবোর্ড"
-                : role === "volunteer"
-                ? "স্বেচ্ছাসেবক ড্যাশবোর্ড"
-                : "রক্তদাতা ড্যাশবোর্ড"}
-            </h1>
+            <h1 className="text-lg font-semibold">{getRoleTitle(user.role)}</h1>
           </div>
 
           <div className="flex items-center gap-2">
@@ -219,9 +181,9 @@ export default function DashboardLayout({
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={mockUser.avatar || undefined} />
+                    <AvatarImage src={user.avatar || undefined} />
                     <AvatarFallback className="bg-blood-100 text-blood-700 text-sm">
-                      {mockUser.name.charAt(0)}
+                      {user.name?.charAt(0) || "U"}
                     </AvatarFallback>
                   </Avatar>
                 </Button>
@@ -229,23 +191,32 @@ export default function DashboardLayout({
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
                   <div className="flex flex-col">
-                    <span>{mockUser.name}</span>
+                    <span>{user.name}</span>
                     <span className="text-xs text-muted-foreground font-normal">
-                      {mockUser.email}
+                      {user.email}
                     </span>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <User className="h-4 w-4 mr-2" />
-                  প্রোফাইল
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/profile">
+                    <User className="h-4 w-4 mr-2" />
+                    প্রোফাইল
+                  </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Settings className="h-4 w-4 mr-2" />
-                  সেটিংস
-                </DropdownMenuItem>
+                {user.role === "admin" && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/dashboard/settings">
+                      <Settings className="h-4 w-4 mr-2" />
+                      সেটিংস
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-destructive">
+                <DropdownMenuItem 
+                  className="text-destructive cursor-pointer"
+                  onClick={handleLogout}
+                >
                   <LogOut className="h-4 w-4 mr-2" />
                   লগআউট
                 </DropdownMenuItem>
@@ -260,5 +231,3 @@ export default function DashboardLayout({
     </div>
   );
 }
-
-

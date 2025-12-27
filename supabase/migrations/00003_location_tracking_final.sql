@@ -247,3 +247,4 @@ BEGIN
     RAISE NOTICE '✓ All features ready for 3D map integration';
 END $$;
 
+

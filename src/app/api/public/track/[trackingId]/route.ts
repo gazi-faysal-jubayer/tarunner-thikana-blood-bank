@@ -1,35 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-
-// Mock database for development (shared with request-blood route)
-// In production, this would query Supabase
-const getMockRequest = (trackingId: string) => {
-  // Return a mock request for demonstration
-  return {
-    id: "mock-id",
-    tracking_id: trackingId,
-    requester_type: "public",
-    patient_name: "মক রোগী",
-    blood_group: "A+",
-    units_needed: 2,
-    hospital_name: "ঢাকা মেডিকেল কলেজ হাসপাতাল",
-    hospital_address: "সেগুনবাগিচা, ঢাকা",
-    district: "Dhaka",
-    division: "Dhaka",
-    needed_by: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    is_emergency: false,
-    urgency: "urgent" as const,
-    status: "submitted" as const,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    timeline: [
-      {
-        status: "submitted",
-        timestamp: new Date().toISOString(),
-        message: "অনুরোধ জমা হয়েছে",
-      },
-    ],
-  };
-};
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 export async function GET(
   request: NextRequest,
@@ -38,7 +9,7 @@ export async function GET(
   try {
     const { trackingId } = await params;
 
-    if (!trackingId || !trackingId.startsWith("BLD-")) {
+    if (!trackingId) {
       return NextResponse.json(
         {
           success: false,
@@ -48,19 +19,29 @@ export async function GET(
       );
     }
 
-    // In production, this would query Supabase
-    // const { createServerSupabaseClient } = await import("@/lib/supabase/server");
-    // const supabase = await createServerSupabaseClient();
-    // const { data, error } = await supabase
-    //   .from("blood_requests")
-    //   .select("*")
-    //   .eq("tracking_id", trackingId)
-    //   .single();
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+          set() {},
+          remove() {},
+        },
+      }
+    );
 
-    // For now, return mock data
-    const data = getMockRequest(trackingId);
+    // Query database for the request
+    const { data, error } = await supabase
+      .from("blood_requests")
+      .select("*")
+      .eq("tracking_id", trackingId)
+      .single();
 
-    if (!data) {
+    if (error || !data) {
       return NextResponse.json(
         {
           success: false,
@@ -68,6 +49,38 @@ export async function GET(
         },
         { status: 404 }
       );
+    }
+
+    // Build timeline based on status
+    const timeline = [];
+    timeline.push({
+      status: "submitted",
+      timestamp: data.created_at,
+      message: "অনুরোধ জমা হয়েছে",
+    });
+
+    if (data.approved_at) {
+      timeline.push({
+        status: "approved",
+        timestamp: data.approved_at,
+        message: "অনুরোধ অনুমোদিত হয়েছে",
+      });
+    }
+
+    if (data.assigned_volunteer_id) {
+      timeline.push({
+        status: "volunteer_assigned",
+        timestamp: data.updated_at,
+        message: "স্বেচ্ছাসেবক নিযুক্ত করা হয়েছে",
+      });
+    }
+
+    if (data.status === "completed" && data.completed_at) {
+      timeline.push({
+        status: "completed",
+        timestamp: data.completed_at,
+        message: "অনুরোধ সম্পন্ন হয়েছে",
+      });
     }
 
     // Sanitize response for public viewing
@@ -85,7 +98,7 @@ export async function GET(
       status: data.status,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
-      timeline: data.timeline,
+      timeline,
     };
 
     return NextResponse.json({
@@ -103,5 +116,3 @@ export async function GET(
     );
   }
 }
-
-

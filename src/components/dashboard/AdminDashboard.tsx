@@ -29,7 +29,7 @@ interface RecentRequest {
   created_at: string;
 }
 
-export default function AdminDashboard() {
+export function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats>({
     pendingRequests: 0,
     activeDonors: 0,
@@ -159,7 +159,7 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex items-center justify-center h-full min-h-[400px]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     );
@@ -170,19 +170,19 @@ export default function AdminDashboard() {
       {/* Header with quick actions */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Dashboard Overview</h2>
-          <p className="text-muted-foreground">Monitor and manage blood donation operations</p>
+          <h2 className="text-2xl font-bold tracking-tight">অ্যাডমিন ড্যাশবোর্ড</h2>
+          <p className="text-muted-foreground">রক্তদান কার্যক্রম পরিচালনা করুন</p>
         </div>
         <div className="flex gap-2">
           <Button asChild variant="outline">
-            <Link href="/dashboard/admin/tracking">
+            <Link href="/dashboard/map">
               <MapPin className="mr-2 h-4 w-4" />
-              Live Tracking
+              লাইভ ট্র্যাকিং
             </Link>
           </Button>
           <Button asChild>
-            <Link href="/dashboard/admin/requests">
-              View All Requests
+            <Link href="/dashboard/requests">
+              সব অনুরোধ দেখুন
             </Link>
           </Button>
         </div>
@@ -192,7 +192,7 @@ export default function AdminDashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Requests</CardTitle>
+            <CardTitle className="text-sm font-medium">অপেক্ষমাণ অনুরোধ</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -200,7 +200,7 @@ export default function AdminDashboard() {
             {stats.criticalRequests > 0 && (
               <p className="text-xs text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-3 w-3 mr-1" />
-                {stats.criticalRequests} critical
+                {stats.criticalRequests} জরুরি
               </p>
             )}
           </CardContent>
@@ -208,38 +208,38 @@ export default function AdminDashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">In Transit</CardTitle>
+            <CardTitle className="text-sm font-medium">যাত্রাপথে</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.inTransit}</div>
-            <p className="text-xs text-muted-foreground">Donors on the way</p>
+            <p className="text-xs text-muted-foreground">দাতা পথে আছেন</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed Today</CardTitle>
+            <CardTitle className="text-sm font-medium">আজ সম্পন্ন</CardTitle>
             <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.completedToday}</div>
             <p className="text-xs text-green-600 flex items-center">
               <TrendingUp className="h-3 w-3 mr-1" />
-              Successful donations
+              সফল রক্তদান
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Available Donors</CardTitle>
+            <CardTitle className="text-sm font-medium">উপলব্ধ দাতা</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.activeDonors}</div>
             <p className="text-xs text-muted-foreground">
-              of {stats.totalDonors} total
+              মোট {stats.totalDonors} জনের মধ্যে
             </p>
           </CardContent>
         </Card>
@@ -248,29 +248,29 @@ export default function AdminDashboard() {
       {/* Recent Requests Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Recent Blood Requests</CardTitle>
-          <CardDescription>Latest requests in the system</CardDescription>
+          <CardTitle>সাম্প্রতিক রক্তের অনুরোধ</CardTitle>
+          <CardDescription>সিস্টেমে সর্বশেষ অনুরোধসমূহ</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b text-left text-sm">
-                  <th className="pb-3 font-medium">Tracking ID</th>
-                  <th className="pb-3 font-medium">Patient</th>
-                  <th className="pb-3 font-medium">Blood Group</th>
-                  <th className="pb-3 font-medium">Hospital</th>
-                  <th className="pb-3 font-medium">Urgency</th>
-                  <th className="pb-3 font-medium">Status</th>
-                  <th className="pb-3 font-medium">Date</th>
-                  <th className="pb-3 font-medium">Actions</th>
+                  <th className="pb-3 font-medium">ট্র্যাকিং ID</th>
+                  <th className="pb-3 font-medium">রোগী</th>
+                  <th className="pb-3 font-medium">রক্তের গ্রুপ</th>
+                  <th className="pb-3 font-medium">হাসপাতাল</th>
+                  <th className="pb-3 font-medium">জরুরিতা</th>
+                  <th className="pb-3 font-medium">অবস্থা</th>
+                  <th className="pb-3 font-medium">তারিখ</th>
+                  <th className="pb-3 font-medium">কার্যক্রম</th>
                 </tr>
               </thead>
               <tbody>
                 {recentRequests.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-muted-foreground">
-                      No requests found
+                      কোনো অনুরোধ পাওয়া যায়নি
                     </td>
                   </tr>
                 ) : (
@@ -284,7 +284,7 @@ export default function AdminDashboard() {
                       <td className="py-3 text-sm">{request.hospital_name}</td>
                       <td className="py-3">
                         <Badge className={getUrgencyColor(request.urgency)}>
-                          {request.urgency}
+                          {request.urgency === 'critical' ? 'জরুরি' : request.urgency === 'urgent' ? 'দ্রুত' : 'সাধারণ'}
                         </Badge>
                       </td>
                       <td className="py-3">
@@ -293,12 +293,12 @@ export default function AdminDashboard() {
                         </Badge>
                       </td>
                       <td className="py-3 text-sm text-muted-foreground">
-                        {new Date(request.created_at).toLocaleDateString()}
+                        {new Date(request.created_at).toLocaleDateString('bn-BD')}
                       </td>
                       <td className="py-3">
                         <Button asChild size="sm" variant="ghost">
-                          <Link href={`/dashboard/admin/requests?id=${request.id}`}>
-                            View
+                          <Link href={`/dashboard/requests?id=${request.id}`}>
+                            দেখুন
                           </Link>
                         </Button>
                       </td>
@@ -315,20 +315,20 @@ export default function AdminDashboard() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>System Overview</CardTitle>
+            <CardTitle>সিস্টেম ওভারভিউ</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Total Donors</span>
+                <span className="text-sm text-muted-foreground">মোট রক্তদাতা</span>
                 <span className="text-sm font-medium">{stats.totalDonors}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Total Volunteers</span>
+                <span className="text-sm text-muted-foreground">মোট স্বেচ্ছাসেবক</span>
                 <span className="text-sm font-medium">{stats.totalVolunteers}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Active Donors</span>
+                <span className="text-sm text-muted-foreground">সক্রিয় রক্তদাতা</span>
                 <span className="text-sm font-medium">{stats.activeDonors}</span>
               </div>
             </div>
@@ -337,18 +337,18 @@ export default function AdminDashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
+            <CardTitle>দ্রুত কার্যক্রম</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               <Button asChild className="w-full" variant="outline">
-                <Link href="/dashboard/admin/requests">Approve Pending Requests</Link>
+                <Link href="/dashboard/requests">অপেক্ষমাণ অনুরোধ অনুমোদন করুন</Link>
               </Button>
               <Button asChild className="w-full" variant="outline">
-                <Link href="/dashboard/admin/volunteers">Assign Volunteers</Link>
+                <Link href="/dashboard/volunteers">স্বেচ্ছাসেবক নিয়োগ করুন</Link>
               </Button>
               <Button asChild className="w-full" variant="outline">
-                <Link href="/dashboard/admin/notifications">Send Alert</Link>
+                <Link href="/dashboard/donors">রক্তদাতা ব্যবস্থাপনা</Link>
               </Button>
             </div>
           </CardContent>
@@ -357,3 +357,5 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
+

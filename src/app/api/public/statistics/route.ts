@@ -1,51 +1,97 @@
 import { NextResponse } from "next/server";
-
-// Mock statistics for public display
-const mockStatistics = {
-  totalRequests: 5234,
-  activeRequests: 23,
-  completedRequests: 4891,
-  totalDonors: 12500,
-  activeDonors: 8900,
-  totalDonations: 15678,
-  requestsByBloodGroup: {
-    "A+": 1245,
-    "A-": 234,
-    "B+": 1567,
-    "B-": 189,
-    "AB+": 456,
-    "AB-": 78,
-    "O+": 1234,
-    "O-": 231,
-  },
-  requestsByStatus: {
-    submitted: 5,
-    approved: 8,
-    volunteer_assigned: 4,
-    donor_assigned: 3,
-    donor_confirmed: 2,
-    in_progress: 1,
-    completed: 4891,
-    cancelled: 320,
-  },
-  recentTrends: {
-    lastWeekRequests: 156,
-    lastWeekDonations: 142,
-    averageResponseTimeHours: 4.5,
-    successRate: 91.2,
-  },
-};
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 export async function GET() {
   try {
-    // In production, this would query Supabase for actual statistics
-    // const { createServerSupabaseClient } = await import("@/lib/supabase/server");
-    // const supabase = await createServerSupabaseClient();
-    // ... query statistics
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+          set() {},
+          remove() {},
+        },
+      }
+    );
+
+    // Get total requests
+    const { count: totalRequests } = await supabase
+      .from("blood_requests")
+      .select("*", { count: "exact", head: true });
+
+    // Get active requests
+    const { count: activeRequests } = await supabase
+      .from("blood_requests")
+      .select("*", { count: "exact", head: true })
+      .in("status", ["submitted", "approved", "volunteer_assigned", "donor_assigned", "in_progress"]);
+
+    // Get completed requests
+    const { count: completedRequests } = await supabase
+      .from("blood_requests")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "completed");
+
+    // Get total donors
+    const { count: totalDonors } = await supabase
+      .from("donors")
+      .select("*", { count: "exact", head: true });
+
+    // Get active donors
+    const { count: activeDonors } = await supabase
+      .from("donors")
+      .select("*", { count: "exact", head: true })
+      .eq("is_available", true);
+
+    // Get total donations
+    const { count: totalDonations } = await supabase
+      .from("donations")
+      .select("*", { count: "exact", head: true });
+
+    // Get requests by blood group
+    const { data: requestsByBG } = await supabase
+      .from("blood_requests")
+      .select("blood_group");
+
+    const requestsByBloodGroup: Record<string, number> = {};
+    requestsByBG?.forEach((r) => {
+      requestsByBloodGroup[r.blood_group] = (requestsByBloodGroup[r.blood_group] || 0) + 1;
+    });
+
+    // Get requests by status
+    const { data: requestsByS } = await supabase
+      .from("blood_requests")
+      .select("status");
+
+    const requestsByStatus: Record<string, number> = {};
+    requestsByS?.forEach((r) => {
+      requestsByStatus[r.status] = (requestsByStatus[r.status] || 0) + 1;
+    });
 
     return NextResponse.json({
       success: true,
-      data: mockStatistics,
+      data: {
+        totalRequests: totalRequests || 0,
+        activeRequests: activeRequests || 0,
+        completedRequests: completedRequests || 0,
+        totalDonors: totalDonors || 0,
+        activeDonors: activeDonors || 0,
+        totalDonations: totalDonations || 0,
+        requestsByBloodGroup,
+        requestsByStatus,
+        recentTrends: {
+          lastWeekRequests: activeRequests || 0,
+          lastWeekDonations: totalDonations || 0,
+          averageResponseTimeHours: 4.5,
+          successRate: completedRequests && totalRequests 
+            ? Math.round((completedRequests / totalRequests) * 100) 
+            : 0,
+        },
+      },
     });
   } catch (error) {
     console.error("Error fetching statistics:", error);
@@ -58,5 +104,3 @@ export async function GET() {
     );
   }
 }
-
-
