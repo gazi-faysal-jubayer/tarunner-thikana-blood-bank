@@ -67,7 +67,7 @@ export function BloodRequestForm() {
 
       const tracking_id = generateTrackingId();
 
-      const { error } = await supabase.from("blood_requests").insert({
+      const { error } = await (supabase.from("blood_requests") as any).insert({
         tracking_id,
         requester_name: data.requester_name,
         requester_phone: data.requester_phone,

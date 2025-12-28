@@ -65,7 +65,8 @@ export function LocationPicker({ value, onChange, error, className }: LocationPi
         try {
             const result = await reverseGeocode(lng, lat);
             const newAddress = result?.place_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-            const locationName = result?.text || "Selected Location";
+            // Extract location name from place_name or use a default
+            const locationName = result?.place_name?.split(',')[0] || "Selected Location";
 
             setAddress(newAddress);
             onChange({
@@ -120,7 +121,7 @@ export function LocationPicker({ value, onChange, error, className }: LocationPi
             latitude: lat,
             longitude: lng,
             address: result.place_name,
-            name: result.text,
+            name: result.place_name.split(',')[0],
         });
     };
 
@@ -154,7 +155,7 @@ export function LocationPicker({ value, onChange, error, className }: LocationPi
                                     className="w-full text-left px-4 py-2 text-sm hover:bg-muted focus:bg-muted"
                                     onClick={() => selectSearchResult(result)}
                                 >
-                                    <div className="font-medium">{result.text}</div>
+                                    <div className="font-medium">{result.place_name.split(',')[0]}</div>
                                     <div className="text-xs text-muted-foreground truncate">{result.place_name}</div>
                                 </button>
                             ))}

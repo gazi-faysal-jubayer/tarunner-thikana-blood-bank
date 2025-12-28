@@ -3,8 +3,12 @@
  * Comprehensive helper functions for Mapbox integration
  */
 
-// @ts-ignore - Turf types issue with Next.js
-import * as turf from '@turf/turf';
+import distance from '@turf/distance';
+import circle from '@turf/circle';
+import { point, polygon } from '@turf/helpers';
+import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
+import bearing from '@turf/bearing';
+import destination from '@turf/destination';
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
 
@@ -22,7 +26,7 @@ export function calculateDistance(
   from: [number, number],
   to: [number, number]
 ): number {
-  return turf.distance(from, to, { units: 'kilometers' });
+  return distance(from, to, { units: 'kilometers' });
 }
 
 /**
@@ -303,7 +307,7 @@ export function createDistanceRing(
   steps: number = 64
 ): GeoJSON.Feature<GeoJSON.Polygon> {
   const options = { steps, units: 'kilometers' as const };
-  return turf.circle(center, radiusKm, options);
+  return circle(center, radiusKm, options);
 }
 
 /**
@@ -330,16 +334,16 @@ export function findPointsInRadius(
 /**
  * Check if a point is inside a polygon
  * @param point [longitude, latitude]
- * @param polygon GeoJSON Polygon
+ * @param polygonGeom GeoJSON Polygon
  * @returns boolean
  */
 export function isPointInPolygon(
-  point: [number, number],
-  polygon: GeoJSON.Polygon | GeoJSON.Feature<GeoJSON.Polygon>
+  pointCoords: [number, number],
+  polygonGeom: GeoJSON.Polygon | GeoJSON.Feature<GeoJSON.Polygon>
 ): boolean {
-  const pt = turf.point(point);
-  const poly = polygon.type === 'Feature' ? polygon : turf.polygon(polygon.coordinates);
-  return turf.booleanPointInPolygon(pt, poly);
+  const pt = point(pointCoords);
+  const poly = polygonGeom.type === 'Feature' ? polygonGeom : polygon(polygonGeom.coordinates);
+  return booleanPointInPolygon(pt, poly);
 }
 
 // =============================================================================
@@ -356,24 +360,24 @@ export function calculateBearing(
   from: [number, number],
   to: [number, number]
 ): number {
-  const bearing = turf.bearing(from, to);
-  return bearing < 0 ? bearing + 360 : bearing;
+  const bearingValue = bearing(from, to);
+  return bearingValue < 0 ? bearingValue + 360 : bearingValue;
 }
 
 /**
  * Get destination point given start, distance, and bearing
  * @param start [longitude, latitude]
- * @param distance Distance in kilometers
- * @param bearing Bearing in degrees
+ * @param distanceKm Distance in kilometers
+ * @param bearingDeg Bearing in degrees
  * @returns [longitude, latitude]
  */
 export function getDestination(
   start: [number, number],
-  distance: number,
-  bearing: number
+  distanceKm: number,
+  bearingDeg: number
 ): [number, number] {
-  const destination = turf.destination(start, distance, bearing, { units: 'kilometers' });
-  return destination.geometry.coordinates as [number, number];
+  const dest = destination(start, distanceKm, bearingDeg, { units: 'kilometers' });
+  return dest.geometry.coordinates as [number, number];
 }
 
 // =============================================================================

@@ -8,10 +8,10 @@ import { cookies } from "next/headers";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    
+
     // Validate the request body
     const validationResult = bloodRequestSchema.safeParse(body);
-    
+
     if (!validationResult.success) {
       return NextResponse.json(
         {
@@ -24,20 +24,22 @@ export async function POST(request: NextRequest) {
     }
 
     const data = validationResult.data;
-    
+
     // Generate tracking ID
     const trackingId = generateTrackingId();
-    
+
     // Calculate urgency
-    const neededBy = new Date(data.neededBy);
+    const neededBy = new Date(`${data.date_needed}T${data.time_needed}`);
     const hoursUntilNeeded = (neededBy.getTime() - Date.now()) / (1000 * 60 * 60);
+
+    // Determine urgency level and emergency status
     let urgency: "critical" | "urgent" | "normal" = "normal";
-    let isEmergency = data.isEmergency;
-    
-    if (hoursUntilNeeded <= 6 || data.isEmergency) {
+    let isEmergency = data.urgency === "emergency";
+
+    if (hoursUntilNeeded <= 6) {
       urgency = "critical";
       isEmergency = true;
-    } else if (hoursUntilNeeded <= 24) {
+    } else if (hoursUntilNeeded <= 24 || data.urgency === "urgent") {
       urgency = "urgent";
     }
 
@@ -57,22 +59,22 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         tracking_id: trackingId,
         requester_type: "public",
-        requester_name: data.requesterName,
-        requester_phone: data.requesterPhone,
-        requester_email: data.requesterEmail || null,
-        patient_name: data.patientName,
-        patient_age: data.patientAge || null,
-        patient_gender: data.patientGender || null,
-        blood_group: data.bloodGroup,
-        units_needed: data.unitsNeeded,
-        hospital_name: data.hospitalName,
-        hospital_address: data.hospitalAddress,
+        requester_name: data.requester_name,
+        requester_phone: data.requester_phone,
+        requester_email: data.requester_email || null,
+        patient_name: data.patient_name,
+        patient_age: data.patient_age || null,
+        patient_gender: data.patient_gender || null,
+        blood_group: data.blood_group,
+        units_needed: data.units_required,
+        hospital_name: data.location_name,
+        hospital_address: data.location_address,
         latitude: data.latitude,
         longitude: data.longitude,
         district: data.district,
         division: data.division,
-        reason: data.reason || null,
-        needed_by: data.neededBy,
+        reason: data.disease_reason || null,
+        needed_by: neededBy.toISOString(),
         is_emergency: isEmergency,
         urgency,
         status: "submitted",
@@ -88,15 +90,15 @@ export async function POST(request: NextRequest) {
     const [bloodRequest] = await response.json();
 
     // Send email notification
-    if (data.requesterEmail) {
+    if (data.requester_email) {
       await sendNotification({
-        email: data.requesterEmail,
+        email: data.requester_email,
         type: "request_submitted",
         title: "রক্তের অনুরোধ জমা হয়েছে",
         message: `আপনার রক্তের অনুরোধ জমা হয়েছে। ট্র্যাকিং আইডি: ${trackingId}`,
         data: {
           trackingId,
-          patientName: data.patientName,
+          patientName: data.patient_name,
         },
       });
     }

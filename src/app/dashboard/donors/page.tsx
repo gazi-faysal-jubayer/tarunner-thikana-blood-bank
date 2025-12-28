@@ -107,14 +107,14 @@ export default function DonorsPage() {
           .from("volunteers")
           .select("id")
           .eq("user_id", data.user.id)
-          .single();
+          .single() as { data: { id: string } | null };
 
         if (volunteerData) {
           const { data: requests } = await supabase
             .from("blood_requests")
             .select("id, tracking_id, blood_group, hospital_name")
             .eq("assigned_volunteer_id", volunteerData.id)
-            .in("status", ["volunteer_assigned"]);
+            .in("status", ["volunteer_assigned"]) as { data: VolunteerRequest[] | null };
 
           if (requests) {
             setVolunteerRequests(requests);
