@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 import { RouteLayer } from './route-layer';
 import { DistanceRings } from './distance-ring';
 import { LocationTracker } from './location-tracker';
-import type { MapMarker, MapViewState, MapStyle, MapControls, DistanceRing } from './types';
+import type { MapMarker, MapViewState, MapStyle, MapControls, DistanceRing, RouteData } from './types';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 interface EnhancedMapProps {
@@ -32,6 +32,8 @@ interface EnhancedMapProps {
   routeEnd?: [number, number];
   distanceRings?: DistanceRing[];
   style?: MapStyle;
+  showAlternativeRoutes?: boolean;
+  onRouteCalculated?: (route: RouteData) => void;
 }
 
 const mapStyles: Record<MapStyle, string> = {
@@ -91,6 +93,8 @@ export function EnhancedMap({
   routeEnd,
   distanceRings = [],
   style = 'streets',
+  showAlternativeRoutes = false,
+  onRouteCalculated,
 }: EnhancedMapProps) {
   // #region agent log
   useEffect(() => {
@@ -327,7 +331,8 @@ export function EnhancedMap({
             start={routeStart}
             end={routeEnd}
             visible={true}
-            showAlternatives={false}
+            showAlternatives={showAlternativeRoutes}
+            onRouteCalculated={onRouteCalculated}
           />
         )}
 

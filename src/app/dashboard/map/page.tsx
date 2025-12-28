@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { MapPin, Loader2, Filter, Layers } from "lucide-react";
+import { MapPin, Loader2, Filter, Layers, Route, Navigation, X, Clock, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { createClient } from "@/lib/supabase/client";
+import { formatDistance, formatDuration } from "@/lib/map-utils";
 
 // Dynamic import for map component to avoid SSR issues
 const EnhancedMap = dynamic(
@@ -27,6 +36,16 @@ const EnhancedMap = dynamic(
       </div>
     )
   }
+);
+
+const RouteLayer = dynamic(
+  () => import("@/components/maps/route-layer").then((mod) => mod.RouteLayer),
+  { ssr: false }
+);
+
+const DirectionsPanel = dynamic(
+  () => import("@/components/maps/route-layer").then((mod) => mod.DirectionsPanel),
+  { ssr: false }
 );
 
 type UserRole = "admin" | "volunteer" | "donor";
@@ -42,6 +61,15 @@ interface MapMarker {
   urgency?: string;
 }
 
+interface RouteInfo {
+  start: [number, number];
+  end: [number, number];
+  donorId?: string;
+  requestId?: string;
+  donorName?: string;
+  hospitalName?: string;
+}
+
 export default function MapPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -51,6 +79,12 @@ export default function MapPage() {
   const [showRequests, setShowRequests] = useState(true);
   const [showDonors, setShowDonors] = useState(true);
   const [bloodGroupFilter, setBloodGroupFilter] = useState<string>("all");
+  
+  // Route visualization state
+  const [selectedRoute, setSelectedRoute] = useState<RouteInfo | null>(null);
+  const [showRoutePanel, setShowRoutePanel] = useState(false);
+  const [routeData, setRouteData] = useState<any>(null);
+  const [selectedMarker, setSelectedMarker] = useState<MapMarker | null>(null);
 
   useEffect(() => {
     loadData();
@@ -134,6 +168,42 @@ export default function MapPage() {
     }
   };
 
+  // Handle marker click for routing
+  const handleMarkerClick = useCallback((marker: MapMarker) => {
+    setSelectedMarker(marker);
+    
+    // If we already have a selected marker of different type, create a route
+    if (selectedMarker && selectedMarker.type !== marker.type) {
+      const donor = marker.type === "donor" ? marker : selectedMarker;
+      const request = marker.type === "request" ? marker : selectedMarker;
+      
+      if (donor.type === "donor" && request.type === "request") {
+        setSelectedRoute({
+          start: [donor.longitude, donor.latitude],
+          end: [request.longitude, request.latitude],
+          donorId: donor.id,
+          requestId: request.id,
+          donorName: donor.title,
+          hospitalName: request.title,
+        });
+        setShowRoutePanel(true);
+      }
+    }
+  }, [selectedMarker]);
+
+  // Clear route selection
+  const clearRoute = useCallback(() => {
+    setSelectedRoute(null);
+    setRouteData(null);
+    setShowRoutePanel(false);
+    setSelectedMarker(null);
+  }, []);
+
+  // Handle route calculation result
+  const handleRouteCalculated = useCallback((data: any) => {
+    setRouteData(data);
+  }, []);
+
   const filteredMarkers = markers.filter((marker) => {
     // Filter out markers with invalid coordinates
     if (!marker || typeof marker.latitude !== 'number' || typeof marker.longitude !== 'number' ||
@@ -171,6 +241,19 @@ export default function MapPage() {
               : "আপনার জন্য অ্যাসাইন করা অনুরোধের অবস্থান দেখুন"}
           </p>
         </div>
+        
+        {/* Route Info Badge */}
+        {selectedRoute && (
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="flex items-center gap-2 py-2 px-3">
+              <Route className="h-4 w-4 text-blue-600" />
+              রুট সিলেক্ট করা হয়েছে
+            </Badge>
+            <Button variant="ghost" size="icon" onClick={clearRoute}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Filters */}
@@ -199,7 +282,81 @@ export default function MapPage() {
                 রক্তদাতা ({markers.filter((m) => m.type === "donor").length})
               </Button>
             )}
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
+              {/* Route Panel Toggle */}
+              {selectedRoute && (
+                <Sheet open={showRoutePanel} onOpenChange={setShowRoutePanel}>
+                  <SheetTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Navigation className="h-4 w-4 mr-2" />
+                      রুট বিবরণ
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="right" className="w-[400px] sm:w-[450px]">
+                    <SheetHeader>
+                      <SheetTitle className="flex items-center gap-2">
+                        <Route className="h-5 w-5 text-blue-600" />
+                        রুট তথ্য
+                      </SheetTitle>
+                    </SheetHeader>
+                    <div className="mt-4 space-y-4">
+                      {/* Route Summary */}
+                      <Card>
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-start gap-3">
+                            <div className="w-3 h-3 rounded-full bg-green-500 mt-1.5" />
+                            <div>
+                              <p className="text-sm text-muted-foreground">শুরু</p>
+                              <p className="font-medium">{selectedRoute.donorName}</p>
+                            </div>
+                          </div>
+                          <div className="ml-1.5 h-4 border-l-2 border-dashed border-gray-300" />
+                          <div className="flex items-start gap-3">
+                            <div className="w-3 h-3 rounded-full bg-red-500 mt-1.5" />
+                            <div>
+                              <p className="text-sm text-muted-foreground">গন্তব্য</p>
+                              <p className="font-medium">{selectedRoute.hospitalName}</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                      
+                      {/* Route Stats */}
+                      {routeData && (
+                        <Card>
+                          <CardContent className="p-4">
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="flex items-center gap-3">
+                                <TrendingUp className="h-5 w-5 text-blue-600" />
+                                <div>
+                                  <p className="text-sm text-muted-foreground">দূরত্ব</p>
+                                  <p className="font-semibold">{formatDistance(routeData.distance, 'bn')}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <Clock className="h-5 w-5 text-blue-600" />
+                                <div>
+                                  <p className="text-sm text-muted-foreground">সময়</p>
+                                  <p className="font-semibold">{formatDuration(routeData.duration, 'bn')}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                      
+                      {/* Directions Panel */}
+                      <ScrollArea className="h-[calc(100vh-400px)]">
+                        <DirectionsPanel 
+                          route={routeData} 
+                          language="bn"
+                        />
+                      </ScrollArea>
+                    </div>
+                  </SheetContent>
+                </Sheet>
+              )}
+              
               <Select value={bloodGroupFilter} onValueChange={setBloodGroupFilter}>
                 <SelectTrigger className="w-[120px]">
                   <SelectValue placeholder="রক্তের গ্রুপ" />
@@ -215,6 +372,14 @@ export default function MapPage() {
               </Select>
             </div>
           </div>
+          
+          {/* Route Selection Hint */}
+          {(role === "admin" || role === "volunteer") && !selectedRoute && (
+            <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+              <Route className="h-3 w-3" />
+              রুট দেখতে একটি রক্তদাতা এবং একটি অনুরোধ মার্কারে ক্লিক করুন
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -237,6 +402,10 @@ export default function MapPage() {
               zoom={11}
               enableLocationTracking={true}
               enable3D={true}
+              routeStart={selectedRoute?.start}
+              routeEnd={selectedRoute?.end}
+              onMarkerClick={handleMarkerClick as any}
+              onRouteCalculated={handleRouteCalculated}
             />
           </div>
         </CardContent>

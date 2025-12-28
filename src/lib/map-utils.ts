@@ -5,12 +5,73 @@
 
 import distance from '@turf/distance';
 import circle from '@turf/circle';
-import { point, polygon } from '@turf/helpers';
+import { point, polygon, lineString } from '@turf/helpers';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 import bearing from '@turf/bearing';
 import destination from '@turf/destination';
+// @ts-ignore - Types may not resolve due to package.json exports
+import nearestPointOnLine from '@turf/nearest-point-on-line';
+// @ts-ignore
+import along from '@turf/along';
+// @ts-ignore
+import length from '@turf/length';
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
+
+// =============================================================================
+// TYPES
+// =============================================================================
+
+export interface Waypoint {
+  coordinates: [number, number];
+  name?: string;
+  arrival?: number; // timestamp
+  departure?: number; // timestamp
+  stopDuration?: number; // seconds
+}
+
+export interface TrafficInfo {
+  congestion: 'low' | 'moderate' | 'heavy' | 'severe' | 'unknown';
+  freeFlowSpeed?: number;
+  currentSpeed?: number;
+  segments?: Array<{
+    startIndex: number;
+    endIndex: number;
+    congestion: string;
+  }>;
+}
+
+export interface EnhancedRouteResponse {
+  distance: number; // meters
+  duration: number; // seconds (without traffic)
+  trafficDuration?: number; // seconds (with traffic)
+  geometry: GeoJSON.LineString;
+  steps?: RouteStep[];
+  weight: number;
+  legs: Array<{
+    distance: number;
+    duration: number;
+    trafficDuration?: number;
+    steps: RouteStep[];
+    annotation?: {
+      distance: number[];
+      duration: number[];
+      speed: number[];
+      congestion?: string[];
+    };
+  }>;
+  waypoints?: Waypoint[];
+  traffic?: TrafficInfo;
+  voiceLocale?: string;
+}
+
+export interface RouteDeviationInfo {
+  isOnRoute: boolean;
+  distanceFromRoute: number; // meters
+  nearestPointOnRoute: [number, number];
+  currentStep: number;
+  shouldReroute: boolean;
+}
 
 // =============================================================================
 // DISTANCE CALCULATIONS
@@ -149,6 +210,473 @@ export async function getDirections(
     console.error('Error fetching directions:', error);
     return null;
   }
+}
+
+// =============================================================================
+// TRAFFIC-AWARE ROUTING
+// =============================================================================
+
+/**
+ * Get directions with real-time traffic data
+ * Uses driving-traffic profile for accurate ETAs
+ * @param start [longitude, latitude]
+ * @param end [longitude, latitude]
+ * @param options Additional options
+ * @returns Promise<EnhancedRouteResponse | null>
+ */
+export async function getTrafficAwareDirections(
+  start: [number, number],
+  end: [number, number],
+  options: {
+    departureTime?: Date;
+    language?: 'en' | 'bn';
+    alternatives?: boolean;
+  } = {}
+): Promise<EnhancedRouteResponse | null> {
+  try {
+    const { departureTime, language = 'en', alternatives = true } = options;
+    
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${start[0]},${start[1]};${end[0]},${end[1]}`;
+    
+    const params = new URLSearchParams({
+      access_token: MAPBOX_TOKEN,
+      alternatives: alternatives.toString(),
+      steps: 'true',
+      geometries: 'geojson',
+      overview: 'full',
+      language,
+      banner_instructions: 'true',
+      voice_instructions: 'true',
+      annotations: 'duration,distance,speed,congestion,congestion_numeric',
+    });
+
+    if (departureTime) {
+      params.append('depart_at', departureTime.toISOString());
+    }
+
+    const response = await fetch(`${url}?${params}`);
+    const data = await response.json();
+
+    if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+      const route = data.routes[0];
+      
+      // Calculate traffic info from annotations
+      const congestionData = route.legs[0]?.annotation?.congestion || [];
+      const traffic = calculateTrafficInfo(congestionData);
+      
+      return {
+        ...route,
+        trafficDuration: route.duration, // driving-traffic already includes traffic
+        traffic,
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching traffic-aware directions:', error);
+    return null;
+  }
+}
+
+/**
+ * Calculate overall traffic info from congestion data
+ */
+function calculateTrafficInfo(congestionData: string[]): TrafficInfo {
+  if (!congestionData.length) {
+    return { congestion: 'unknown' };
+  }
+  
+  const counts = {
+    low: 0,
+    moderate: 0,
+    heavy: 0,
+    severe: 0,
+    unknown: 0,
+  };
+  
+  congestionData.forEach(c => {
+    if (c in counts) {
+      counts[c as keyof typeof counts]++;
+    }
+  });
+  
+  const total = congestionData.length;
+  const heavyPercent = ((counts.heavy + counts.severe) / total) * 100;
+  const moderatePercent = (counts.moderate / total) * 100;
+  
+  let overallCongestion: TrafficInfo['congestion'] = 'low';
+  if (heavyPercent > 30) overallCongestion = 'severe';
+  else if (heavyPercent > 15) overallCongestion = 'heavy';
+  else if (moderatePercent > 30) overallCongestion = 'moderate';
+  
+  return {
+    congestion: overallCongestion,
+    segments: congestionData.map((congestion, i) => ({
+      startIndex: i,
+      endIndex: i + 1,
+      congestion,
+    })),
+  };
+}
+
+// =============================================================================
+// WAYPOINT ROUTING
+// =============================================================================
+
+/**
+ * Get directions with multiple waypoints
+ * @param coordinates Array of [longitude, latitude] coordinates (start, waypoints..., end)
+ * @param options Route options
+ * @returns Promise<EnhancedRouteResponse | null>
+ */
+export async function getDirectionsWithWaypoints(
+  coordinates: Array<[number, number]>,
+  options: {
+    profile?: 'driving' | 'driving-traffic' | 'walking' | 'cycling';
+    language?: 'en' | 'bn';
+    optimizeOrder?: boolean;
+  } = {}
+): Promise<EnhancedRouteResponse | null> {
+  if (coordinates.length < 2) {
+    console.error('At least 2 coordinates required');
+    return null;
+  }
+  
+  try {
+    const { profile = 'driving-traffic', language = 'en', optimizeOrder = false } = options;
+    
+    const coordsString = coordinates.map(c => `${c[0]},${c[1]}`).join(';');
+    const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${coordsString}`;
+    
+    const params = new URLSearchParams({
+      access_token: MAPBOX_TOKEN,
+      steps: 'true',
+      geometries: 'geojson',
+      overview: 'full',
+      language,
+      annotations: 'duration,distance,speed,congestion',
+    });
+
+    // If optimizeOrder is true, use the Optimization API instead
+    if (optimizeOrder && coordinates.length > 2) {
+      return await getOptimizedRoute(coordinates, { profile, language });
+    }
+
+    const response = await fetch(`${url}?${params}`);
+    const data = await response.json();
+
+    if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+      return {
+        ...data.routes[0],
+        waypoints: data.waypoints?.map((wp: any, i: number) => ({
+          coordinates: wp.location as [number, number],
+          name: wp.name,
+        })),
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching directions with waypoints:', error);
+    return null;
+  }
+}
+
+// =============================================================================
+// ROUTE OPTIMIZATION (TSP - Traveling Salesman Problem)
+// =============================================================================
+
+/**
+ * Optimize route order for multiple stops (uses Mapbox Optimization API)
+ * @param coordinates Array of [longitude, latitude] - first is start, last is end
+ * @param options Optimization options
+ * @returns Promise<EnhancedRouteResponse | null>
+ */
+export async function getOptimizedRoute(
+  coordinates: Array<[number, number]>,
+  options: {
+    profile?: 'driving' | 'driving-traffic' | 'walking' | 'cycling';
+    language?: 'en' | 'bn';
+    roundTrip?: boolean;
+    source?: 'first' | 'any';
+    destination?: 'last' | 'any';
+  } = {}
+): Promise<EnhancedRouteResponse | null> {
+  if (coordinates.length < 2 || coordinates.length > 12) {
+    console.error('Optimization requires 2-12 coordinates');
+    return null;
+  }
+  
+  try {
+    const {
+      profile = 'driving',
+      language = 'en',
+      roundTrip = false,
+      source = 'first',
+      destination = 'last',
+    } = options;
+    
+    const coordsString = coordinates.map(c => `${c[0]},${c[1]}`).join(';');
+    const url = `https://api.mapbox.com/optimized-trips/v1/mapbox/${profile}/${coordsString}`;
+    
+    const params = new URLSearchParams({
+      access_token: MAPBOX_TOKEN,
+      geometries: 'geojson',
+      overview: 'full',
+      steps: 'true',
+      language,
+      roundtrip: roundTrip.toString(),
+      source,
+      destination,
+      annotations: 'duration,distance',
+    });
+
+    const response = await fetch(`${url}?${params}`);
+    const data = await response.json();
+
+    if (data.code === 'Ok' && data.trips && data.trips.length > 0) {
+      const trip = data.trips[0];
+      return {
+        distance: trip.distance,
+        duration: trip.duration,
+        geometry: trip.geometry,
+        legs: trip.legs,
+        steps: trip.legs.flatMap((leg: any) => leg.steps || []),
+        weight: trip.weight || 0,
+        waypoints: data.waypoints?.map((wp: any) => ({
+          coordinates: wp.location as [number, number],
+          name: wp.name,
+        })),
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error optimizing route:', error);
+    return null;
+  }
+}
+
+// =============================================================================
+// ROUTE DEVIATION DETECTION
+// =============================================================================
+
+const DEVIATION_THRESHOLD_METERS = 50; // Max distance from route before considered off-route
+const REROUTE_THRESHOLD_METERS = 100; // Distance at which rerouting is recommended
+
+/**
+ * Check if a point is on the route and calculate deviation
+ * @param currentPosition [longitude, latitude]
+ * @param routeGeometry GeoJSON LineString of the route
+ * @param currentStepIndex Current step in the navigation
+ * @returns RouteDeviationInfo
+ */
+export function checkRouteDeviation(
+  currentPosition: [number, number],
+  routeGeometry: GeoJSON.LineString,
+  currentStepIndex: number = 0
+): RouteDeviationInfo {
+  try {
+    const currentPoint = point(currentPosition);
+    const routeLine = lineString(routeGeometry.coordinates);
+    
+    // Find nearest point on route
+    const nearestPoint = nearestPointOnLine(routeLine, currentPoint);
+    const nearestCoords = nearestPoint.geometry.coordinates as [number, number];
+    
+    // Calculate distance from route in meters
+    const distanceFromRoute = distance(currentPosition, nearestCoords, { units: 'meters' });
+    
+    const isOnRoute = distanceFromRoute <= DEVIATION_THRESHOLD_METERS;
+    const shouldReroute = distanceFromRoute >= REROUTE_THRESHOLD_METERS;
+    
+    return {
+      isOnRoute,
+      distanceFromRoute,
+      nearestPointOnRoute: nearestCoords,
+      currentStep: currentStepIndex,
+      shouldReroute,
+    };
+  } catch (error) {
+    console.error('Error checking route deviation:', error);
+    return {
+      isOnRoute: true,
+      distanceFromRoute: 0,
+      nearestPointOnRoute: currentPosition,
+      currentStep: currentStepIndex,
+      shouldReroute: false,
+    };
+  }
+}
+
+/**
+ * Calculate remaining distance and time on route from current position
+ * @param currentPosition [longitude, latitude]
+ * @param routeGeometry GeoJSON LineString
+ * @param totalDistance Total route distance in meters
+ * @param totalDuration Total route duration in seconds
+ * @param averageSpeed Optional current average speed in m/s
+ * @returns { remainingDistance, remainingDuration, progress }
+ */
+export function calculateRemainingRoute(
+  currentPosition: [number, number],
+  routeGeometry: GeoJSON.LineString,
+  totalDistance: number,
+  totalDuration: number,
+  averageSpeed?: number
+): {
+  remainingDistance: number;
+  remainingDuration: number;
+  progress: number;
+} {
+  try {
+    const routeLine = lineString(routeGeometry.coordinates);
+    const currentPoint = point(currentPosition);
+    
+    // Find nearest point on route
+    const nearestPoint = nearestPointOnLine(routeLine, currentPoint);
+    const traveledDistance = nearestPoint.properties.location || 0;
+    
+    // Route length in km, convert to meters
+    const routeLength = length(routeLine, { units: 'meters' });
+    const remainingDistance = Math.max(0, routeLength - traveledDistance * 1000);
+    const progress = Math.min(100, (traveledDistance * 1000 / routeLength) * 100);
+    
+    // Calculate remaining time
+    let remainingDuration: number;
+    if (averageSpeed && averageSpeed > 0) {
+      // Use actual speed for more accurate ETA
+      remainingDuration = remainingDistance / averageSpeed;
+    } else {
+      // Use proportional estimate
+      remainingDuration = (remainingDistance / totalDistance) * totalDuration;
+    }
+    
+    return {
+      remainingDistance,
+      remainingDuration,
+      progress,
+    };
+  } catch (error) {
+    console.error('Error calculating remaining route:', error);
+    return {
+      remainingDistance: totalDistance,
+      remainingDuration: totalDuration,
+      progress: 0,
+    };
+  }
+}
+
+// =============================================================================
+// ETA CALCULATION
+// =============================================================================
+
+/**
+ * Calculate estimated time of arrival
+ * @param durationSeconds Duration in seconds
+ * @param departureTime Optional departure time (defaults to now)
+ * @returns Date object representing ETA
+ */
+export function calculateETA(
+  durationSeconds: number,
+  departureTime: Date = new Date()
+): Date {
+  return new Date(departureTime.getTime() + durationSeconds * 1000);
+}
+
+/**
+ * Format ETA for display
+ * @param eta Date object
+ * @param language 'en' or 'bn'
+ * @returns Formatted ETA string
+ */
+export function formatETA(eta: Date, language: 'en' | 'bn' = 'en'): string {
+  const now = new Date();
+  const diffMs = eta.getTime() - now.getTime();
+  const diffMins = Math.round(diffMs / 60000);
+  
+  if (diffMins < 1) {
+    return language === 'bn' ? 'এখনই' : 'Now';
+  }
+  
+  const hours = eta.getHours();
+  const minutes = eta.getMinutes();
+  const ampm = hours >= 12 ? (language === 'bn' ? 'PM' : 'PM') : (language === 'bn' ? 'AM' : 'AM');
+  const hour12 = hours % 12 || 12;
+  const minuteStr = minutes.toString().padStart(2, '0');
+  
+  if (language === 'bn') {
+    return `${hour12}:${minuteStr} ${ampm} (${diffMins} মিনিট)`;
+  }
+  
+  return `${hour12}:${minuteStr} ${ampm} (${diffMins} min)`;
+}
+
+// =============================================================================
+// STATIC MAP & SHARING
+// =============================================================================
+
+/**
+ * Generate a static map image URL with route
+ * @param route Route geometry
+ * @param options Image options
+ * @returns Static map URL
+ */
+export function generateStaticMapUrl(
+  route: GeoJSON.LineString,
+  options: {
+    width?: number;
+    height?: number;
+    style?: 'streets-v12' | 'satellite-v9' | 'outdoors-v12' | 'dark-v11';
+    startMarker?: [number, number];
+    endMarker?: [number, number];
+  } = {}
+): string {
+  const {
+    width = 600,
+    height = 400,
+    style = 'streets-v12',
+    startMarker,
+    endMarker,
+  } = options;
+  
+  // Encode route as polyline
+  const coords = route.coordinates;
+  const pathString = coords.map(c => `[${c[0]},${c[1]}]`).join(',');
+  
+  let url = `https://api.mapbox.com/styles/v1/mapbox/${style}/static/`;
+  
+  // Add route overlay
+  const geoJsonOverlay = encodeURIComponent(JSON.stringify({
+    type: 'Feature',
+    geometry: route,
+    properties: { stroke: '#3b82f6', 'stroke-width': 4 },
+  }));
+  url += `geojson(${geoJsonOverlay})`;
+  
+  // Add markers
+  if (startMarker) {
+    url += `,pin-s-a+22c55e(${startMarker[0]},${startMarker[1]})`;
+  }
+  if (endMarker) {
+    url += `,pin-s-b+ef4444(${endMarker[0]},${endMarker[1]})`;
+  }
+  
+  // Add auto-fit and dimensions
+  url += `/auto/${width}x${height}?access_token=${MAPBOX_TOKEN}`;
+  
+  return url;
+}
+
+/**
+ * Generate shareable route link
+ * @param routeId Route ID from database
+ * @param shareToken Unique share token
+ * @returns Shareable URL
+ */
+export function generateShareableRouteLink(
+  routeId: string,
+  shareToken: string,
+  baseUrl: string = typeof window !== 'undefined' ? window.location.origin : ''
+): string {
+  return `${baseUrl}/track/route/${routeId}?token=${shareToken}`;
 }
 
 /**

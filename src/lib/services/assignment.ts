@@ -3,9 +3,17 @@
  * Handles the two-level assignment system:
  * 1. Admin assigns volunteers to requests
  * 2. Volunteers assign donors to requests
+ * 
+ * Enhanced with real driving distance and routing integration
  */
 
 import { calculateDistance } from "@/lib/utils";
+import { 
+  calculateDrivingDistance, 
+  getTrafficAwareDirections,
+  calculateETA,
+  type EnhancedRouteResponse,
+} from "@/lib/map-utils";
 import type { BloodGroup } from "@/lib/supabase/types";
 
 interface Donor {
@@ -47,6 +55,10 @@ interface DonorScore {
   donor: Donor;
   score: number;
   distance: number;
+  drivingDistance?: number; // Actual road distance in km
+  drivingDuration?: number; // Driving time in minutes
+  estimatedETA?: Date;
+  routeData?: EnhancedRouteResponse;
   isEligible: boolean;
   reasons: string[];
 }
@@ -55,6 +67,10 @@ interface VolunteerScore {
   volunteer: Volunteer;
   score: number;
   distance: number;
+  drivingDistance?: number;
+  drivingDuration?: number;
+  estimatedETA?: Date;
+  routeData?: EnhancedRouteResponse;
   reasons: string[];
 }
 
@@ -100,27 +116,43 @@ function isBloodCompatible(
  */
 export function calculateDonorScore(
   donor: Donor,
-  request: BloodRequest
+  request: BloodRequest,
+  drivingData?: { distance: number; duration: number }
 ): DonorScore {
   const reasons: string[] = [];
   let score = 0;
 
-  // Calculate distance
-  const distance = calculateDistance(
+  // Calculate straight-line distance
+  const straightLineDistance = calculateDistance(
     request.latitude,
     request.longitude,
     donor.latitude,
     donor.longitude
   );
 
+  // Use driving distance if available, otherwise use straight-line
+  const distance = drivingData?.distance ?? straightLineDistance;
+  const drivingDuration = drivingData?.duration;
+
   // Distance score (40% weight) - Max 40 points, decreases with distance
   const maxDistance = 20; // km
   const distanceScore = Math.max(0, 40 * (1 - distance / maxDistance));
   score += distanceScore;
-  if (distance <= 5) {
-    reasons.push("খুব কাছে");
-  } else if (distance <= 10) {
-    reasons.push("কাছাকাছি");
+  
+  if (drivingDuration) {
+    if (drivingDuration <= 10) {
+      reasons.push("১০ মিনিটের মধ্যে");
+    } else if (drivingDuration <= 20) {
+      reasons.push("২০ মিনিটের মধ্যে");
+    } else if (drivingDuration <= 30) {
+      reasons.push("৩০ মিনিটের মধ্যে");
+    }
+  } else {
+    if (distance <= 5) {
+      reasons.push("খুব কাছে");
+    } else if (distance <= 10) {
+      reasons.push("কাছাকাছি");
+    }
   }
 
   // Blood group match (30% weight)
@@ -162,7 +194,10 @@ export function calculateDonorScore(
   return {
     donor,
     score: Math.round(score),
-    distance: Math.round(distance * 10) / 10,
+    distance: Math.round(straightLineDistance * 10) / 10,
+    drivingDistance: drivingData ? Math.round(drivingData.distance * 10) / 10 : undefined,
+    drivingDuration: drivingData ? Math.round(drivingData.duration) : undefined,
+    estimatedETA: drivingData ? calculateETA(drivingData.duration * 60) : undefined,
     isEligible,
     reasons,
   };
@@ -224,6 +259,7 @@ export function calculateVolunteerScore(
 
 /**
  * Find and rank nearby donors for a request
+ * @param useRealDistance - If true, fetches actual driving distance (async)
  */
 export function findMatchingDonors(
   donors: Donor[],
@@ -250,6 +286,86 @@ export function findMatchingDonors(
 }
 
 /**
+ * Find and rank nearby donors with real driving distance
+ * This version fetches actual route data from Mapbox
+ */
+export async function findMatchingDonorsWithRoutes(
+  donors: Donor[],
+  request: BloodRequest,
+  options: {
+    limit?: number;
+    includeRoutes?: boolean;
+    maxDistanceKm?: number;
+  } = {}
+): Promise<DonorScore[]> {
+  const { limit = 10, includeRoutes = false, maxDistanceKm = 20 } = options;
+  
+  // Filter for compatible blood groups and available donors
+  const compatibleDonors = donors.filter(
+    (donor) =>
+      isBloodCompatible(request.bloodGroup, donor.bloodGroup) &&
+      donor.isAvailable &&
+      isDonorEligible(donor)
+  );
+  
+  // Pre-filter by straight-line distance to reduce API calls
+  const nearbyDonors = compatibleDonors.filter(donor => {
+    const distance = calculateDistance(
+      request.latitude,
+      request.longitude,
+      donor.latitude,
+      donor.longitude
+    );
+    return distance <= maxDistanceKm * 1.5; // Allow some buffer for road distance
+  });
+  
+  // Fetch driving distances for nearby donors (in parallel, batched)
+  const scoredDonors: DonorScore[] = [];
+  const batchSize = 5; // Limit concurrent API calls
+  
+  for (let i = 0; i < nearbyDonors.length; i += batchSize) {
+    const batch = nearbyDonors.slice(i, i + batchSize);
+    
+    const batchResults = await Promise.all(
+      batch.map(async (donor) => {
+        const drivingData = await calculateDrivingDistance(
+          [donor.longitude, donor.latitude],
+          [request.longitude, request.latitude]
+        );
+        
+        let routeData: EnhancedRouteResponse | undefined;
+        if (includeRoutes && drivingData) {
+          routeData = await getTrafficAwareDirections(
+            [donor.longitude, donor.latitude],
+            [request.longitude, request.latitude],
+            { language: 'bn' }
+          ) as EnhancedRouteResponse | undefined;
+        }
+        
+        const score = calculateDonorScore(donor, request, drivingData || undefined);
+        if (routeData) {
+          score.routeData = routeData;
+        }
+        
+        return score;
+      })
+    );
+    
+    scoredDonors.push(...batchResults);
+  }
+  
+  // Filter by actual driving distance
+  const filteredDonors = scoredDonors.filter(
+    (d) => (d.drivingDistance ?? d.distance) <= maxDistanceKm
+  );
+  
+  // Sort by score (highest first) and return top matches
+  return filteredDonors
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+/**
  * Find and rank nearby volunteers for a request
  */
 export function findMatchingVolunteers(
@@ -269,6 +385,92 @@ export function findMatchingVolunteers(
   return scoredVolunteers
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
+}
+
+/**
+ * Find and rank nearby volunteers with real driving distance
+ */
+export async function findMatchingVolunteersWithRoutes(
+  volunteers: Volunteer[],
+  request: BloodRequest,
+  options: {
+    limit?: number;
+    includeRoutes?: boolean;
+    maxDistanceKm?: number;
+  } = {}
+): Promise<VolunteerScore[]> {
+  const { limit = 5, includeRoutes = false, maxDistanceKm = 30 } = options;
+  
+  // Filter for active volunteers
+  const activeVolunteers = volunteers.filter((v) => v.isActive);
+  
+  // Pre-filter by straight-line distance
+  const nearbyVolunteers = activeVolunteers.filter(volunteer => {
+    const distance = calculateDistance(
+      request.latitude,
+      request.longitude,
+      volunteer.latitude,
+      volunteer.longitude
+    );
+    return distance <= maxDistanceKm * 1.5;
+  });
+  
+  const scoredVolunteers: VolunteerScore[] = [];
+  
+  for (const volunteer of nearbyVolunteers) {
+    const drivingData = await calculateDrivingDistance(
+      [volunteer.longitude, volunteer.latitude],
+      [request.longitude, request.latitude]
+    );
+    
+    let routeData: EnhancedRouteResponse | undefined;
+    if (includeRoutes && drivingData) {
+      routeData = await getTrafficAwareDirections(
+        [volunteer.longitude, volunteer.latitude],
+        [request.longitude, request.latitude],
+        { language: 'bn' }
+      ) as EnhancedRouteResponse | undefined;
+    }
+    
+    const score = calculateVolunteerScoreWithDriving(volunteer, request, drivingData || undefined);
+    if (routeData) {
+      score.routeData = routeData;
+    }
+    
+    scoredVolunteers.push(score);
+  }
+  
+  // Filter by actual driving distance
+  const filteredVolunteers = scoredVolunteers.filter(
+    (v) => (v.drivingDistance ?? v.distance) <= maxDistanceKm
+  );
+  
+  return filteredVolunteers
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+/**
+ * Calculate volunteer score with driving data
+ */
+function calculateVolunteerScoreWithDriving(
+  volunteer: Volunteer,
+  request: BloodRequest,
+  drivingData?: { distance: number; duration: number }
+): VolunteerScore {
+  const baseScore = calculateVolunteerScore(volunteer, request);
+  
+  if (!drivingData) {
+    return baseScore;
+  }
+  
+  // Add driving-specific data
+  return {
+    ...baseScore,
+    drivingDistance: Math.round(drivingData.distance * 10) / 10,
+    drivingDuration: Math.round(drivingData.duration),
+    estimatedETA: calculateETA(drivingData.duration * 60),
+  };
 }
 
 /**
