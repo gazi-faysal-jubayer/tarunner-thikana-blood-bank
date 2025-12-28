@@ -43,6 +43,8 @@ interface ProfileData {
 
 interface AssignedRequest {
   id: string;
+  assignment_id: string;
+  assignment_status: string;
   tracking_id: string;
   blood_group: string;
   hospital_name: string;
@@ -133,6 +135,8 @@ export function DonorDashboard() {
             .filter((a: any) => a.blood_requests)
             .map((a: any) => ({
               id: a.blood_requests.id,
+              assignment_id: a.id,
+              assignment_status: a.status,
               tracking_id: a.blood_requests.tracking_id,
               blood_group: a.blood_requests.blood_group,
               hospital_name: a.blood_requests.hospital_name,
@@ -209,6 +213,96 @@ export function DonorDashboard() {
   };
 
   const { isEligible, daysUntilEligible } = calculateEligibility();
+
+  const respondToAssignment = async (assignmentId: string, accept: boolean) => {
+    try {
+      const response = await fetch(`/api/assignments/${assignmentId}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accept }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: accept ? "গ্রহণ করা হয়েছে" : "প্রত্যাখ্যান করা হয়েছে",
+          description: accept 
+            ? "আপনি এই অনুরোধ গ্রহণ করেছেন"
+            : "আপনি এই অনুরোধ প্রত্যাখ্যান করেছেন",
+        });
+        loadDonorData();
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      toast({
+        title: "ত্রুটি",
+        description: "প্রতিক্রিয়া জমা দিতে সমস্যা হয়েছে",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const startTransit = async (assignmentId: string) => {
+    try {
+      const response = await fetch(`/api/assignments/${assignmentId}/start-transit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estimatedArrivalMinutes: 30 }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "যাত্রা শুরু",
+          description: "আপনি হাসপাতালের দিকে যাচ্ছেন",
+        });
+        loadDonorData();
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      toast({
+        title: "ত্রুটি",
+        description: "যাত্রা শুরু করতে সমস্যা হয়েছে",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const completeDonation = async (request: AssignedRequest) => {
+    try {
+      const response = await fetch("/api/donations/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assignmentId: request.assignment_id,
+          requestId: request.id,
+          unitsDonated: 1,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "রক্তদান সম্পন্ন",
+          description: "আপনার রক্তদান রেকর্ড করা হয়েছে। ধন্যবাদ!",
+        });
+        loadDonorData();
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      toast({
+        title: "ত্রুটি",
+        description: "রক্তদান রেকর্ড করতে সমস্যা হয়েছে",
+        variant: "destructive",
+      });
+    }
+  };
 
   if (loading) {
     return (
@@ -381,13 +475,58 @@ export function DonorDashboard() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <Button variant="blood">
-                    গ্রহণ করুন
-                    <ArrowRight className="h-4 w-4 ml-2" />
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    প্রত্যাখ্যান
-                  </Button>
+                  {request.assignment_status === "pending" ? (
+                    <>
+                      <Button 
+                        variant="blood"
+                        onClick={() => respondToAssignment(request.assignment_id, true)}
+                      >
+                        গ্রহণ করুন
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => respondToAssignment(request.assignment_id, false)}
+                      >
+                        প্রত্যাখ্যান
+                      </Button>
+                    </>
+                  ) : request.assignment_status === "accepted" && request.status === "donor_confirmed" ? (
+                    <>
+                      <Button 
+                        variant="default"
+                        onClick={() => startTransit(request.assignment_id)}
+                      >
+                        যাত্রা শুরু করুন
+                        <MapPin className="h-4 w-4 ml-2" />
+                      </Button>
+                    </>
+                  ) : request.status === "in_progress" ? (
+                    <>
+                      <Button 
+                        variant="blood"
+                        onClick={() => completeDonation(request)}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        রক্তদান সম্পন্ন
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => {
+                          const lat = request.latitude;
+                          const lng = request.longitude;
+                          window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, '_blank');
+                        }}
+                      >
+                        <MapPin className="h-4 w-4 mr-2" />
+                        নেভিগেট করুন
+                      </Button>
+                    </>
+                  ) : (
+                    <Badge variant="outline">অপেক্ষমাণ</Badge>
+                  )}
                 </div>
               </div>
             ))}
@@ -456,5 +595,6 @@ export function DonorDashboard() {
     </div>
   );
 }
+
 
 

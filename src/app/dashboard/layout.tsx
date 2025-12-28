@@ -104,12 +104,15 @@ export default function DashboardLayout({
 
   const handleLogout = async () => {
     try {
+      // Call logout API to clear server-side cookies
+      await fetch("/api/auth/logout", { method: "POST" });
+      // Also sign out from client
       await supabase.auth.signOut();
       toast({
         title: "লগআউট সফল",
         description: "আপনি সফলভাবে লগআউট করেছেন",
       });
-      router.push("/login");
+      window.location.href = "/login";
     } catch (error) {
       toast({
         title: "ত্রুটি",

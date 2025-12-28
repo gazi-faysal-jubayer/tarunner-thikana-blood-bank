@@ -45,7 +45,7 @@ export function AdminDashboard() {
 
   useEffect(() => {
     loadDashboardData();
-    
+
     // Set up real-time subscription for requests
     const channel = supabase
       .channel('admin-dashboard')
@@ -112,10 +112,11 @@ export function AdminDashboard() {
         .from('volunteers')
         .select('*', { count: 'exact', head: true });
 
-      // Get recent requests
+      // Get pending requests for the table
       const { data: requests } = await supabase
         .from('blood_requests')
         .select('id, tracking_id, patient_name, blood_group, urgency, status, hospital_name, created_at')
+        .eq('status', 'submitted')
         .order('created_at', { ascending: false })
         .limit(10);
 
@@ -134,6 +135,22 @@ export function AdminDashboard() {
       console.error('Error loading dashboard data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleApprove = async (id: string) => {
+    try {
+      const { error } = await (supabase
+        .from('blood_requests') as any)
+        .update({ status: 'approved' })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // Refresh data
+      loadDashboardData();
+    } catch (error) {
+      console.error('Error approving request:', error);
     }
   };
 
@@ -248,8 +265,8 @@ export function AdminDashboard() {
       {/* Recent Requests Table */}
       <Card>
         <CardHeader>
-          <CardTitle>সাম্প্রতিক রক্তের অনুরোধ</CardTitle>
-          <CardDescription>সিস্টেমে সর্বশেষ অনুরোধসমূহ</CardDescription>
+          <CardTitle>অপেক্ষমাণ অনুরোধসমূহ</CardTitle>
+          <CardDescription>অনুমোদনের জন্য অপেক্ষমাণ অনুরোধ</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -270,7 +287,7 @@ export function AdminDashboard() {
                 {recentRequests.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-muted-foreground">
-                      কোনো অনুরোধ পাওয়া যায়নি
+                      কোনো অপেক্ষমাণ অনুরোধ পাওয়া যায়নি
                     </td>
                   </tr>
                 ) : (
@@ -289,18 +306,28 @@ export function AdminDashboard() {
                       </td>
                       <td className="py-3">
                         <Badge className={getStatusColor(request.status)}>
-                          {request.status}
+                          {request.status === 'submitted' ? 'অপেক্ষমাণ' : request.status}
                         </Badge>
                       </td>
                       <td className="py-3 text-sm text-muted-foreground">
                         {new Date(request.created_at).toLocaleDateString('bn-BD')}
                       </td>
-                      <td className="py-3">
+                      <td className="py-3 flex gap-2">
                         <Button asChild size="sm" variant="ghost">
                           <Link href={`/dashboard/requests?id=${request.id}`}>
                             দেখুন
                           </Link>
                         </Button>
+                        {request.status === 'submitted' && (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            className="bg-green-600 hover:bg-green-700"
+                            onClick={() => handleApprove(request.id)}
+                          >
+                            অনুমোদন
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -357,5 +384,6 @@ export function AdminDashboard() {
     </div>
   );
 }
+
 
 

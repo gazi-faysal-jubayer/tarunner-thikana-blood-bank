@@ -12,6 +12,8 @@ import {
   Loader2,
   ArrowRight,
   User,
+  UserPlus,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +26,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 type UserRole = "admin" | "volunteer" | "donor";
 
@@ -40,10 +44,28 @@ interface Assignment {
   request_hospital: string;
 }
 
+interface Volunteer {
+  id: string;
+  full_name: string;
+  district: string;
+  is_active: boolean;
+  requests_handled: number;
+  success_rate: number;
+}
+
+interface RequestDetails {
+  id: string;
+  tracking_id: string;
+  blood_group: string;
+  hospital_name: string;
+  patient_name: string;
+}
+
 export default function AssignmentsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = createClient();
+  const supabase: any = createClient();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<UserRole>("donor");
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -51,9 +73,14 @@ export default function AssignmentsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
 
+  // For volunteer assignment
+  const [requestToAssign, setRequestToAssign] = useState<RequestDetails | null>(null);
+  const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
+  const [assigning, setAssigning] = useState<string | null>(null);
+
   useEffect(() => {
     loadData();
-  }, []);
+  }, [searchParams]);
 
   const loadData = async () => {
     try {
@@ -72,6 +99,12 @@ export default function AssignmentsPage() {
       }
 
       setRole(data.role as UserRole);
+
+      // Check if there's a request to assign a volunteer to
+      const requestId = searchParams.get("request");
+      if (requestId && data.role === "admin") {
+        await loadRequestAndVolunteers(requestId);
+      }
 
       // Fetch assignments with related data
       const { data: assignmentsData } = await supabase
@@ -109,6 +142,81 @@ export default function AssignmentsPage() {
       console.error("Error:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadRequestAndVolunteers = async (requestId: string) => {
+    // Get the request details
+    const { data: requestData } = await supabase
+      .from("blood_requests")
+      .select("id, tracking_id, blood_group, hospital_name, patient_name")
+      .eq("id", requestId)
+      .single();
+
+    if (requestData) {
+      setRequestToAssign(requestData);
+    }
+
+    // Get all active volunteers
+    const { data: volunteersData } = await supabase
+      .from("volunteers")
+      .select(`
+        id,
+        district,
+        is_active,
+        requests_handled,
+        success_rate,
+        profiles!volunteers_user_id_fkey (
+          full_name
+        )
+      `)
+      .eq("is_active", true)
+      .order("success_rate", { ascending: false });
+
+    if (volunteersData) {
+      setVolunteers(
+        volunteersData.map((v: any) => ({
+          id: v.id,
+          full_name: v.profiles?.full_name || "Unknown",
+          district: v.district || "N/A",
+          is_active: v.is_active,
+          requests_handled: v.requests_handled || 0,
+          success_rate: v.success_rate || 0,
+        }))
+      );
+    }
+  };
+
+  const assignVolunteer = async (volunteerId: string) => {
+    if (!requestToAssign) return;
+    setAssigning(volunteerId);
+
+    try {
+      const response = await fetch(`/api/admin/requests/${requestToAssign.id}/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ volunteerId }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast({
+          title: "সফল!",
+          description: "স্বেচ্ছাসেবক সফলভাবে অ্যাসাইন করা হয়েছে",
+        });
+        setRequestToAssign(null);
+        router.push("/dashboard/requests");
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (error: any) {
+      toast({
+        title: "ত্রুটি",
+        description: error.message || "অ্যাসাইন করা যায়নি",
+        variant: "destructive",
+      });
+    } finally {
+      setAssigning(null);
     }
   };
 
@@ -170,6 +278,88 @@ export default function AssignmentsPage() {
           </p>
         </div>
       </div>
+
+      {/* Volunteer Assignment Section */}
+      {requestToAssign && (
+        <Card className="border-blood-200 bg-blood-50/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-blood-700">
+              <UserPlus className="h-5 w-5" />
+              স্বেচ্ছাসেবক নিযুক্ত করুন
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              অনুরোধ: <span className="font-mono">{requestToAssign.tracking_id}</span> • 
+              রক্তের গ্রুপ: <Badge variant="outline">{requestToAssign.blood_group}</Badge> • 
+              {requestToAssign.hospital_name}
+            </p>
+          </CardHeader>
+          <CardContent>
+            {volunteers.length === 0 ? (
+              <p className="text-center py-4 text-muted-foreground">
+                কোনো সক্রিয় স্বেচ্ছাসেবক পাওয়া যায়নি
+              </p>
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {volunteers.map((volunteer) => (
+                  <div
+                    key={volunteer.id}
+                    className="p-4 border rounded-lg bg-white hover:border-blood-300 transition-colors"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <Avatar>
+                          <AvatarFallback className="bg-blood-100 text-blood-700">
+                            {volunteer.full_name.charAt(0)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium">{volunteer.full_name}</p>
+                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <MapPin className="h-3 w-3" />
+                            {volunteer.district}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        {volunteer.requests_handled} অনুরোধ সম্পন্ন
+                      </span>
+                      <Badge variant="secondary" className="bg-green-100 text-green-700">
+                        {volunteer.success_rate}% সফলতা
+                      </Badge>
+                    </div>
+                    <Button
+                      className="w-full mt-3"
+                      variant="blood"
+                      size="sm"
+                      onClick={() => assignVolunteer(volunteer.id)}
+                      disabled={assigning === volunteer.id}
+                    >
+                      {assigning === volunteer.id ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          অ্যাসাইন হচ্ছে...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="mr-2 h-4 w-4" />
+                          অ্যাসাইন করুন
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="mt-4 flex justify-end">
+              <Button variant="outline" onClick={() => router.push("/dashboard/requests")}>
+                বাতিল
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid md:grid-cols-4 gap-4">
@@ -350,5 +540,6 @@ export default function AssignmentsPage() {
     </div>
   );
 }
+
 
 

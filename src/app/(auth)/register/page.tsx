@@ -88,15 +88,42 @@ export default function RegisterPage() {
     e.preventDefault();
     setIsLoading(true);
 
-    // Mock registration - in production, use Supabase Auth
-    setTimeout(() => {
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        toast({
+          title: "নিবন্ধন ব্যর্থ",
+          description: result.error || "নিবন্ধন করতে সমস্যা হয়েছে",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
       toast({
         title: "নিবন্ধন সফল!",
         description: "আপনি সফলভাবে রক্তদাতা হিসেবে নিবন্ধন করেছেন",
       });
+      
+      // Redirect to dashboard
+      window.location.href = "/dashboard";
+    } catch (error: any) {
+      console.error("Registration error:", error);
+      toast({
+        title: "ত্রুটি",
+        description: "নিবন্ধন করতে সমস্যা হয়েছে",
+        variant: "destructive",
+      });
+    } finally {
       setIsLoading(false);
-      router.push("/dashboard/donor");
-    }, 1500);
+    }
   };
 
   const progress = ((currentStep + 1) / steps.length) * 100;
@@ -431,6 +458,7 @@ export default function RegisterPage() {
     </div>
   );
 }
+
 
 
 

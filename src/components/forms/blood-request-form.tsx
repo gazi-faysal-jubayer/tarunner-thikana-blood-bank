@@ -4,134 +4,110 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
-import {
-  Droplet,
-  MapPin,
-  User,
-  Phone,
-  Mail,
-  Building,
-  Calendar,
-  AlertCircle,
-  Loader2,
-  Navigation,
-} from "lucide-react";
+import { format, addHours, isBefore } from "date-fns";
+import { Loader2, CalendarIcon, Clock, MapPin, User, AlertCircle } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar"; // Assuming shadcn calendar exists
 import { useToast } from "@/hooks/use-toast";
-import {
-  bloodRequestSchema,
-  type BloodRequestFormValues,
-  divisions,
-  districtsByDivision,
-} from "@/lib/validations/blood-request";
+import { LocationPicker } from "@/components/LocationPicker";
+import { createClient } from "@/lib/supabase/client";
+import { bloodRequestSchema, type BloodRequestFormData } from "@/lib/validations/blood-request";
+import { type BloodGroup, type Gender } from "@/lib/supabase/types";
+import { cn } from "@/lib/utils";
 
-const bloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] as const;
-const genderOptions = [
-  { value: "male", label: "পুরুষ" },
-  { value: "female", label: "মহিলা" },
-  { value: "other", label: "অন্যান্য" },
-];
+// Generate tracking ID: BLD-YYYYMMDD-XXXX
+const generateTrackingId = () => {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const random = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
+  return `BLD-${date}-${random}`;
+};
 
 export function BloodRequestForm() {
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedDivision, setSelectedDivision] = useState<string>("");
-  const [isLocating, setIsLocating] = useState(false);
+  const supabase = createClient();
 
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    watch,
-    formState: { errors },
-  } = useForm<BloodRequestFormValues>({
+  const form = useForm<BloodRequestFormData>({
     resolver: zodResolver(bloodRequestSchema),
     defaultValues: {
-      unitsNeeded: 1,
-      isEmergency: false,
-      latitude: 23.8103, // Default to Dhaka
-      longitude: 90.4125,
-      division: "",
-      district: "",
+      requester_name: "",
+      requester_phone: "",
+      patient_name: "",
+      units_required: 1,
+      urgency: "urgent",
+      date_needed: format(new Date(), "yyyy-MM-dd"), // Default today
+      time_needed: "",
     },
   });
 
-  const watchedIsEmergency = watch("isEmergency");
-  const watchedBloodGroup = watch("bloodGroup");
+  const { register, handleSubmit, formState: { errors }, setValue, watch } = form;
+  const urgency = watch("urgency");
 
-  const handleGetLocation = async () => {
-    if (!navigator.geolocation) {
-      toast({
-        title: "ত্রুটি",
-        description: "আপনার ব্রাউজার লোকেশন সাপোর্ট করে না",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setValue("latitude", position.coords.latitude);
-        setValue("longitude", position.coords.longitude);
-        setIsLocating(false);
-        toast({
-          title: "সফল",
-          description: "আপনার লোকেশন পাওয়া গেছে",
-        });
-      },
-      (error) => {
-        setIsLocating(false);
-        toast({
-          title: "ত্রুটি",
-          description: "লোকেশন পেতে ব্যর্থ হয়েছে",
-          variant: "destructive",
-        });
-        console.error(error);
-      },
-      { enableHighAccuracy: true }
-    );
-  };
-
-  const onSubmit = async (data: BloodRequestFormValues) => {
+  const onSubmit = async (data: BloodRequestFormData) => {
     setIsSubmitting(true);
     try {
-      const response = await fetch("/api/public/request-blood", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+      // Calculate datetime_needed
+      const datetime_needed = new Date(`${data.date_needed}T${data.time_needed}`);
+      const now = new Date();
+
+      // Determine emergency status automatically if < 6 hours or marked emergency
+      const is_emergency =
+        data.urgency === "emergency" ||
+        isBefore(datetime_needed, addHours(now, 6));
+
+      const tracking_id = generateTrackingId();
+
+      const { error } = await supabase.from("blood_requests").insert({
+        tracking_id,
+        requester_name: data.requester_name,
+        requester_phone: data.requester_phone,
+        requester_email: data.requester_email || null,
+        requester_type: "public" as const,
+        patient_name: data.patient_name,
+        patient_age: data.patient_age ?? null,
+        patient_gender: (data.patient_gender as Gender) ?? null,
+        blood_group: data.blood_group as BloodGroup,
+        units_needed: data.units_required,
+        reason: data.disease_reason || null,
+        hospital_name: data.location_name,
+        hospital_address: data.location_address,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        district: data.district || "Dhaka",
+        division: data.division || "Dhaka",
+        urgency: data.urgency === "emergency" ? "critical" : data.urgency === "routine" ? "normal" : "urgent",
+        needed_by: datetime_needed.toISOString(), // Mapped to correct column
+        status: "submitted",
+        is_emergency,
+        // datetime_needed removed as it does not exist
+        created_at: new Date().toISOString(),
       });
 
-      const result = await response.json();
+      if (error) throw error;
 
-      if (result.success) {
-        toast({
-          title: "অনুরোধ জমা হয়েছে!",
-          description: `ট্র্যাকিং আইডি: ${result.data.trackingId}`,
-          variant: "default",
-        });
-        router.push(`/track/${result.data.trackingId}`);
-      } else {
-        throw new Error(result.error || "কিছু একটা ভুল হয়েছে");
-      }
-    } catch (error) {
+      // Success
+      toast({
+        title: "অনুরোধ জমা হয়েছে",
+        description: `আপনার ট্র্যাকিং আইডি: ${tracking_id}`,
+      });
+
+      router.push(`/request-blood/success?tracking_id=${tracking_id}`);
+
+    } catch (error: any) {
+      console.error("Submission error:", error);
       toast({
         title: "ত্রুটি",
-        description: error instanceof Error ? error.message : "অনুরোধ জমা দিতে ব্যর্থ হয়েছে",
+        description: "অনুরোধ জমা দিতে সমস্যা হয়েছে। আবার চেষ্টা করুন।",
         variant: "destructive",
       });
     } finally {
@@ -141,366 +117,194 @@ export function BloodRequestForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
-      {/* Blood Group Selection */}
+      {/* Requester Info */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-blood-700">
-            <Droplet className="h-5 w-5" />
-            রক্তের গ্রুপ নির্বাচন করুন
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
-            {bloodGroups.map((group) => (
-              <button
-                key={group}
-                type="button"
-                onClick={() => setValue("bloodGroup", group)}
-                className={`aspect-square flex flex-col items-center justify-center rounded-xl border-2 transition-all ${
-                  watchedBloodGroup === group
-                    ? "border-blood-600 bg-blood-50 ring-2 ring-blood-600 ring-offset-2"
-                    : "border-border hover:border-blood-300 hover:bg-blood-50/50"
-                }`}
-              >
-                <Droplet
-                  className={`h-6 w-6 ${
-                    watchedBloodGroup === group
-                      ? "text-blood-600 fill-blood-200"
-                      : "text-muted-foreground"
-                  }`}
-                />
-                <span
-                  className={`mt-1 font-bold ${
-                    watchedBloodGroup === group ? "text-blood-700" : "text-foreground"
-                  }`}
-                >
-                  {group}
-                </span>
-              </button>
-            ))}
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <User className="h-5 w-5 text-blood-600" />
+            <h3 className="font-semibold text-lg">আবেদনকারীর তথ্য</h3>
           </div>
-          {errors.bloodGroup && (
-            <p className="mt-2 text-sm text-destructive flex items-center gap-1">
-              <AlertCircle className="h-4 w-4" />
-              {errors.bloodGroup.message}
-            </p>
-          )}
-
-          {/* Units needed */}
-          <div className="mt-4 flex items-center gap-4">
-            <Label htmlFor="unitsNeeded">কত ব্যাগ প্রয়োজন?</Label>
-            <Select
-              defaultValue="1"
-              onValueChange={(value) => setValue("unitsNeeded", parseInt(value))}
-            >
-              <SelectTrigger className="w-24">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
-                  <SelectItem key={num} value={num.toString()}>
-                    {num} ব্যাগ
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Emergency Toggle */}
-      <Card className={watchedIsEmergency ? "border-urgency-critical" : ""}>
-        <CardContent className="pt-6">
-          <div className="flex items-center gap-3">
-            <Checkbox
-              id="isEmergency"
-              checked={watchedIsEmergency}
-              onCheckedChange={(checked) => setValue("isEmergency", !!checked)}
-              className="h-5 w-5"
-            />
-            <div className="flex-1">
-              <Label htmlFor="isEmergency" className="text-base font-semibold cursor-pointer">
-                এটি একটি জরুরি অনুরোধ
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                ৬ ঘণ্টার মধ্যে রক্ত প্রয়োজন হলে এটি নির্বাচন করুন
-              </p>
-            </div>
-            {watchedIsEmergency && (
-              <Badge variant="critical" className="animate-pulse">
-                জরুরি
-              </Badge>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Patient Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            রোগীর তথ্য
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="patientName">রোগীর নাম *</Label>
-              <Input
-                id="patientName"
-                placeholder="রোগীর পুরো নাম"
-                {...register("patientName")}
-                className={errors.patientName ? "border-destructive" : ""}
-              />
-              {errors.patientName && (
-                <p className="text-sm text-destructive">{errors.patientName.message}</p>
-              )}
+              <Label htmlFor="requester_name">আপনার নাম <span className="text-red-500">*</span></Label>
+              <Input id="requester_name" {...register("requester_name")} placeholder="আপনার পুরো নাম" />
+              {errors.requester_name && <p className="text-sm text-red-500">{errors.requester_name.message}</p>}
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="patientAge">বয়স</Label>
-                <Input
-                  id="patientAge"
-                  type="number"
-                  placeholder="বয়স"
-                  {...register("patientAge")}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="patientGender">লিঙ্গ</Label>
-                <Select onValueChange={(value) => setValue("patientGender", value as "male" | "female" | "other")}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="নির্বাচন করুন" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {genderOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="requester_phone">মোবাইল নম্বর <span className="text-red-500">*</span></Label>
+              <Input id="requester_phone" {...register("requester_phone")} placeholder="01XXXXXXXXX" />
+              {errors.requester_phone && <p className="text-sm text-red-500">{errors.requester_phone.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="requester_email">ইমেইল (ঐচ্ছিক)</Label>
+              <Input id="requester_email" {...register("requester_email")} placeholder="email@example.com" type="email" />
+              {errors.requester_email && <p className="text-sm text-red-500">{errors.requester_email.message}</p>}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Requester Information */}
+      {/* Patient Info */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Phone className="h-5 w-5" />
-            যোগাযোগের তথ্য
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="requesterName">আপনার নাম *</Label>
-              <Input
-                id="requesterName"
-                placeholder="আপনার পুরো নাম"
-                {...register("requesterName")}
-                className={errors.requesterName ? "border-destructive" : ""}
-              />
-              {errors.requesterName && (
-                <p className="text-sm text-destructive">{errors.requesterName.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="requesterPhone">মোবাইল নম্বর *</Label>
-              <Input
-                id="requesterPhone"
-                placeholder="01XXXXXXXXX"
-                {...register("requesterPhone")}
-                className={errors.requesterPhone ? "border-destructive" : ""}
-              />
-              {errors.requesterPhone && (
-                <p className="text-sm text-destructive">{errors.requesterPhone.message}</p>
-              )}
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="requesterEmail">
-              <Mail className="h-4 w-4 inline mr-1" />
-              ইমেইল (ঐচ্ছিক)
-            </Label>
-            <Input
-              id="requesterEmail"
-              type="email"
-              placeholder="your@email.com"
-              {...register("requesterEmail")}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Hospital Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building className="h-5 w-5" />
-            হাসপাতালের তথ্য
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="hospitalName">হাসপাতালের নাম *</Label>
-            <Input
-              id="hospitalName"
-              placeholder="হাসপাতাল বা ক্লিনিকের নাম"
-              {...register("hospitalName")}
-              className={errors.hospitalName ? "border-destructive" : ""}
-            />
-            {errors.hospitalName && (
-              <p className="text-sm text-destructive">{errors.hospitalName.message}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="hospitalAddress">সম্পূর্ণ ঠিকানা *</Label>
-            <Textarea
-              id="hospitalAddress"
-              placeholder="বিস্তারিত ঠিকানা লিখুন"
-              {...register("hospitalAddress")}
-              className={errors.hospitalAddress ? "border-destructive" : ""}
-            />
-            {errors.hospitalAddress && (
-              <p className="text-sm text-destructive">{errors.hospitalAddress.message}</p>
-            )}
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <User className="h-5 w-5 text-blood-600" />
+            <h3 className="font-semibold text-lg">রোগীর তথ্য</h3>
           </div>
 
-          {/* Location */}
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>বিভাগ *</Label>
-              <Select
-                onValueChange={(value) => {
-                  setSelectedDivision(value);
-                  setValue("division", value);
-                  setValue("district", "");
-                }}
-              >
+              <Label htmlFor="patient_name">রোগীর নাম <span className="text-red-500">*</span></Label>
+              <Input id="patient_name" {...register("patient_name")} />
+              {errors.patient_name && <p className="text-sm text-red-500">{errors.patient_name.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label>রক্তের গ্রুপ <span className="text-red-500">*</span></Label>
+              <Select onValueChange={(val) => setValue("blood_group", val as any)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="বিভাগ নির্বাচন করুন" />
+                  <SelectValue placeholder="রক্তের গ্রুপ নির্বাচন করুন" />
                 </SelectTrigger>
                 <SelectContent>
-                  {divisions.map((div) => (
-                    <SelectItem key={div.value} value={div.value}>
-                      {div.label}
-                    </SelectItem>
+                  {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((bg) => (
+                    <SelectItem key={bg} value={bg}>{bg}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {errors.blood_group && <p className="text-sm text-red-500">{errors.blood_group.message}</p>}
             </div>
+
             <div className="space-y-2">
-              <Label>জেলা *</Label>
-              <Select
-                disabled={!selectedDivision}
-                onValueChange={(value) => setValue("district", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="জেলা নির্বাচন করুন" />
-                </SelectTrigger>
-                <SelectContent>
-                  {selectedDivision &&
-                    districtsByDivision[selectedDivision]?.map((dist) => (
-                      <SelectItem key={dist.value} value={dist.value}>
-                        {dist.label}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="units_required">কত ব্যাগ রক্ত প্রয়োজন? <span className="text-red-500">*</span></Label>
+              <Input
+                id="units_required"
+                type="number"
+                min={1}
+                max={10}
+                {...register("units_required", { valueAsNumber: true })}
+              />
+              {errors.units_required && <p className="text-sm text-red-500">{errors.units_required.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="disease_reason">রোগ বা কারণ</Label>
+              <Input id="disease_reason" {...register("disease_reason")} placeholder="যেমন: ডেঙ্গু, অপারেশন, থ্যালাসেমিয়া" />
             </div>
           </div>
-
-          {/* Get Location Button */}
-          <div className="flex items-center gap-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleGetLocation}
-              disabled={isLocating}
-            >
-              {isLocating ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Navigation className="h-4 w-4 mr-2" />
-              )}
-              বর্তমান লোকেশন ব্যবহার করুন
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              <MapPin className="h-4 w-4 inline mr-1" />
-              অথবা ম্যাপে ক্লিক করুন
-            </span>
-          </div>
-
-          {/* Hidden location fields */}
-          <input type="hidden" {...register("latitude")} />
-          <input type="hidden" {...register("longitude")} />
         </CardContent>
       </Card>
 
-      {/* When Needed */}
+      {/* Urgency & Timing */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            কবে রক্ত প্রয়োজন?
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid md:grid-cols-2 gap-4">
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Clock className="h-5 w-5 text-blood-600" />
+            <h3 className="font-semibold text-lg">সময় এবং জরুরি অবস্থা</h3>
+          </div>
+
+          <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="neededBy">তারিখ ও সময় *</Label>
-              <Input
-                id="neededBy"
-                type="datetime-local"
-                {...register("neededBy")}
-                className={errors.neededBy ? "border-destructive" : ""}
-              />
-              {errors.neededBy && (
-                <p className="text-sm text-destructive">{errors.neededBy.message}</p>
-              )}
+              <Label>জরুরি অবস্থা <span className="text-red-500">*</span></Label>
+              <RadioGroup
+                onValueChange={(val) => setValue("urgency", val as any)}
+                defaultValue={urgency}
+                className="grid md:grid-cols-3 gap-4"
+              >
+                <div>
+                  <RadioGroupItem value="routine" id="routine" className="peer sr-only" />
+                  <Label
+                    htmlFor="routine"
+                    className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-blood-600 [&:has([data-state=checked])]:border-blood-600"
+                  >
+                    <span className="text-lg font-semibold">সাধারণ</span>
+                    <span className="text-sm text-muted-foreground text-center mt-1">৩+ দিন পর প্রয়োজন</span>
+                  </Label>
+                </div>
+                <div>
+                  <RadioGroupItem value="urgent" id="urgent" className="peer sr-only" />
+                  <Label
+                    htmlFor="urgent"
+                    className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-orange-500 [&:has([data-state=checked])]:border-orange-500"
+                  >
+                    <span className="text-lg font-semibold text-orange-600">জরুরি</span>
+                    <span className="text-sm text-muted-foreground text-center mt-1">২৪-৭২ ঘন্টার মধ্যে</span>
+                  </Label>
+                </div>
+                <div>
+                  <RadioGroupItem value="emergency" id="emergency" className="peer sr-only" />
+                  <Label
+                    htmlFor="emergency"
+                    className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-red-600 [&:has([data-state=checked])]:border-red-600"
+                  >
+                    <span className="text-lg font-semibold text-red-600">অত্যন্ত জরুরি</span>
+                    <span className="text-sm text-muted-foreground text-center mt-1">২৪ ঘন্টার মধ্যে</span>
+                  </Label>
+                </div>
+              </RadioGroup>
+              {errors.urgency && <p className="text-sm text-red-500">{errors.urgency.message}</p>}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="reason">কারণ (ঐচ্ছিক)</Label>
-              <Input
-                id="reason"
-                placeholder="অপারেশন, দুর্ঘটনা, ইত্যাদি"
-                {...register("reason")}
-              />
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="date_needed">কবে প্রয়োজন? <span className="text-red-500">*</span></Label>
+                <Input type="date" id="date_needed" {...register("date_needed")} min={format(new Date(), "yyyy-MM-dd")} />
+                {errors.date_needed && <p className="text-sm text-red-500">{errors.date_needed.message}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="time_needed">কখন প্রয়োজন? <span className="text-red-500">*</span></Label>
+                <Input type="time" id="time_needed" {...register("time_needed")} />
+                {errors.time_needed && <p className="text-sm text-red-500">{errors.time_needed.message}</p>}
+              </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Submit Button */}
-      <div className="flex justify-center">
-        <Button
-          type="submit"
-          variant="blood"
-          size="xl"
-          disabled={isSubmitting}
-          className="w-full md:w-auto min-w-[300px]"
-        >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-              জমা হচ্ছে...
-            </>
-          ) : (
-            <>
-              <Droplet className="h-5 w-5 mr-2" />
-              রক্তের অনুরোধ জমা দিন
-            </>
-          )}
-        </Button>
-      </div>
+      {/* Location */}
+      <Card>
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <MapPin className="h-5 w-5 text-blood-600" />
+            <h3 className="font-semibold text-lg">অবস্থান / হাসপাতাল</h3>
+          </div>
+
+          <LocationPicker
+            onChange={(val) => {
+              setValue("latitude", val.latitude);
+              setValue("longitude", val.longitude);
+              if (val.address) setValue("location_address", val.address);
+              if (val.name) setValue("location_name", val.name);
+              // Simple district extraction or default
+              setValue("district", "Dhaka"); // TODO: Extract from address if possible
+            }}
+            error={errors.latitude?.message || errors.location_name?.message}
+          />
+
+          <div className="grid md:grid-cols-2 gap-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="location_name">হাসপাতাল/স্থানের নাম <span className="text-red-500">*</span></Label>
+              <Input id="location_name" {...register("location_name")} placeholder="যেমন: ঢাকা মেডিকেল কলেজ" />
+              {errors.location_name && <p className="text-sm text-red-500">{errors.location_name.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="location_address">বিস্তারিত ঠিকানা <span className="text-red-500">*</span></Label>
+              <Textarea id="location_address" {...register("location_address")} placeholder="রোড, হাউজ নং, এলাকা..." />
+              {errors.location_address && <p className="text-sm text-red-500">{errors.location_address.message}</p>}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Button type="submit" className="w-full bg-blood-600 hover:bg-blood-700 text-lg py-6" disabled={isSubmitting}>
+        {isSubmitting ? (
+          <>
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            জমা দেওয়া হচ্ছে...
+          </>
+        ) : (
+          "রক্তের অনুরোধ জমা দিন"
+        )}
+      </Button>
     </form>
   );
 }
-
-
-

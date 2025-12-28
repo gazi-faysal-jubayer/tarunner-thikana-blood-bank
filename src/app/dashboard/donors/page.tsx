@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Users,
   Search,
@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 type UserRole = "admin" | "volunteer" | "donor";
 
@@ -47,8 +48,17 @@ interface DonorData {
 
 const bloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
+interface VolunteerRequest {
+  id: string;
+  tracking_id: string;
+  blood_group: string;
+  hospital_name: string;
+}
+
 export default function DonorsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<UserRole>("donor");
@@ -56,10 +66,21 @@ export default function DonorsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [bloodGroupFilter, setBloodGroupFilter] = useState<string>("all");
   const [availabilityFilter, setAvailabilityFilter] = useState<string>("all");
+  const [volunteerRequests, setVolunteerRequests] = useState<VolunteerRequest[]>([]);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    // Check if a request ID was passed in URL
+    const requestId = searchParams.get("request");
+    if (requestId) {
+      setSelectedRequestId(requestId);
+    }
+  }, [searchParams]);
 
   const loadData = async () => {
     try {
@@ -79,6 +100,33 @@ export default function DonorsPage() {
       }
 
       setRole(data.role as UserRole);
+
+      // If volunteer, load their assigned requests
+      if (data.role === "volunteer") {
+        const { data: volunteerData } = await supabase
+          .from("volunteers")
+          .select("id")
+          .eq("user_id", data.user.id)
+          .single();
+
+        if (volunteerData) {
+          const { data: requests } = await supabase
+            .from("blood_requests")
+            .select("id, tracking_id, blood_group, hospital_name")
+            .eq("assigned_volunteer_id", volunteerData.id)
+            .in("status", ["volunteer_assigned"]);
+
+          if (requests) {
+            setVolunteerRequests(requests);
+            // Auto-select first request if none selected
+            if (!selectedRequestId && requests.length > 0) {
+              setSelectedRequestId(requests[0].id);
+              // Auto-filter by blood group
+              setBloodGroupFilter(requests[0].blood_group);
+            }
+          }
+        }
+      }
 
       // Fetch donors with profiles
       const { data: donorsData } = await supabase
@@ -113,6 +161,49 @@ export default function DonorsPage() {
       console.error("Error:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const assignDonor = async (donorId: string) => {
+    if (!selectedRequestId) {
+      toast({
+        title: "অনুরোধ নির্বাচন করুন",
+        description: "প্রথমে একটি অনুরোধ নির্বাচন করুন",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setAssigning(donorId);
+    try {
+      const response = await fetch(`/api/requests/${selectedRequestId}/assign-donor`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ donorId }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "সফল",
+          description: "রক্তদাতা সফলভাবে অ্যাসাইন করা হয়েছে",
+        });
+        // Remove the assigned request from the list
+        setVolunteerRequests(prev => prev.filter(r => r.id !== selectedRequestId));
+        setSelectedRequestId(null);
+        router.push("/dashboard/requests");
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      toast({
+        title: "ত্রুটি",
+        description: "অ্যাসাইন করতে সমস্যা হয়েছে",
+        variant: "destructive",
+      });
+    } finally {
+      setAssigning(null);
     }
   };
 
@@ -158,6 +249,45 @@ export default function DonorsPage() {
           <p className="text-sm text-muted-foreground">মোট রক্তদাতা</p>
         </div>
       </div>
+
+      {/* Request Selection for Volunteers */}
+      {role === "volunteer" && volunteerRequests.length > 0 && (
+        <Card className="border-blood-200 bg-blood-50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <p className="text-sm font-medium mb-2">অনুরোধ নির্বাচন করুন:</p>
+                <Select 
+                  value={selectedRequestId || ""} 
+                  onValueChange={(value) => {
+                    setSelectedRequestId(value);
+                    const request = volunteerRequests.find(r => r.id === value);
+                    if (request) {
+                      setBloodGroupFilter(request.blood_group);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="অনুরোধ নির্বাচন করুন" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {volunteerRequests.map((req) => (
+                      <SelectItem key={req.id} value={req.id}>
+                        {req.tracking_id} - {req.blood_group} - {req.hospital_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {selectedRequestId && (
+                <Badge variant="blood" className="text-lg px-4 py-2">
+                  {volunteerRequests.find(r => r.id === selectedRequestId)?.blood_group}
+                </Badge>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid md:grid-cols-4 gap-4">
@@ -307,12 +437,31 @@ export default function DonorsPage() {
 
                     {role === "volunteer" && donor.is_available && (
                       <div className="mt-3 flex gap-2">
-                        <Button size="sm" variant="outline" className="flex-1">
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="flex-1"
+                          onClick={() => {
+                            if (donor.profile?.phone) {
+                              window.open(`tel:${donor.profile.phone}`, '_self');
+                            }
+                          }}
+                        >
                           <Phone className="h-4 w-4 mr-1" />
                           কল করুন
                         </Button>
-                        <Button size="sm" variant="blood" className="flex-1">
-                          অ্যাসাইন করুন
+                        <Button 
+                          size="sm" 
+                          variant="blood" 
+                          className="flex-1"
+                          disabled={!selectedRequestId || assigning === donor.id}
+                          onClick={() => assignDonor(donor.id)}
+                        >
+                          {assigning === donor.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "অ্যাসাইন করুন"
+                          )}
                         </Button>
                       </div>
                     )}
@@ -326,5 +475,6 @@ export default function DonorsPage() {
     </div>
   );
 }
+
 
 

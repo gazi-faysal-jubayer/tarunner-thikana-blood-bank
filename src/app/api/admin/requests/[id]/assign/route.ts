@@ -23,17 +23,22 @@ export async function POST(
         type: volunteerId ? 'volunteer' : 'donor',
         assigned_by: user.id,
         status: 'pending',
-        notes: notes || null,
+        response_note: notes || null,
       });
 
     if (assignmentError) throw assignmentError;
 
-    // Update request status
+    // Update request status and assigned volunteer if applicable
     const newStatus = volunteerId ? 'volunteer_assigned' : 'donor_assigned';
+    
+    const updateData: any = { status: newStatus };
+    if (volunteerId) {
+      updateData.assigned_volunteer_id = volunteerId;
+    }
     
     const { error: updateError } = await supabase
       .from('blood_requests')
-      .update({ status: newStatus })
+      .update(updateData)
       .eq('id', id);
 
     if (updateError) throw updateError;

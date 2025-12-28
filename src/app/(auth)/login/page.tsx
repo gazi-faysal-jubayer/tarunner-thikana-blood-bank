@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 import { Droplet, Heart, Lock, Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +16,9 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  const { signIn } = useAuth();
+  const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -35,38 +40,31 @@ export default function LoginPage() {
     }
 
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: formEmail.trim(),
-          password: formPassword,
-        }),
-      });
+      const { error } = await signIn(formEmail.trim(), formPassword);
 
-      const result = await response.json();
-
-      if (!result.success) {
+      if (error) {
+        console.error("Login detail error:", error);
         toast({
           title: "লগইন ব্যর্থ",
-          description: result.error === "Invalid credentials" 
+          description: error.message === "Invalid credentials" || error.message === "Invalid login credentials"
             ? "ভুল ইমেইল বা পাসওয়ার্ড"
-            : result.error || "লগইন করতে সমস্যা হয়েছে",
+            : "লগইন করতে সমস্যা হয়েছে. আবার চেষ্টা করুন",
           variant: "destructive",
         });
         setIsLoading(false);
         return;
       }
 
-      // Success - show message and redirect
+      // Success - show message
       toast({
         title: "সফল ✓",
-        description: `স্বাগতম, ${result.user.name || result.user.email}!`,
+        description: "স্বাগতম!",
       });
 
-      // All roles redirect to unified dashboard
-      // The dashboard page will render role-specific content
-      window.location.href = "/dashboard";
+      // Redirect is handled in signIn or here?
+      // AuthContext signOut handles redirect, but signIn returned promise.
+      // We should redirect here.
+      router.push("/dashboard");
 
     } catch (error: any) {
       console.error("Login error:", error);
@@ -124,7 +122,7 @@ export default function LoginPage() {
                   autoComplete="email"
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="password">পাসওয়ার্ড</Label>
                 <Input
