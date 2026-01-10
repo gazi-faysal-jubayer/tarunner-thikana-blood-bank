@@ -1,17 +1,17 @@
-import { createServerClient } from '@supabase/ssr';
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from "next/server";
+import { auth } from "./lib/better-auth/auth";
 
 // Route access configuration
 const routePermissions: Record<string, string[]> = {
-  '/dashboard/volunteers': ['admin'],
-  '/dashboard/settings': ['admin'],
-  '/dashboard/donors': ['admin', 'volunteer'],
-  '/dashboard/assignments': ['admin', 'volunteer'],
-  '/dashboard': ['admin', 'volunteer', 'donor'],
-  '/dashboard/requests': ['admin', 'volunteer', 'donor'],
-  '/dashboard/map': ['admin', 'volunteer', 'donor'],
-  '/dashboard/statistics': ['admin', 'volunteer', 'donor'],
-  '/dashboard/profile': ['admin', 'volunteer', 'donor'],
+  "/dashboard/volunteers": ["admin"],
+  "/dashboard/settings": ["admin"],
+  "/dashboard/donors": ["admin", "volunteer"],
+  "/dashboard/assignments": ["admin", "volunteer"],
+  "/dashboard": ["admin", "volunteer", "donor"],
+  "/dashboard/requests": ["admin", "volunteer", "donor"],
+  "/dashboard/map": ["admin", "volunteer", "donor"],
+  "/dashboard/statistics": ["admin", "volunteer", "donor"],
+  "/dashboard/profile": ["admin", "volunteer", "donor"],
 };
 
 export async function proxy(request: NextRequest) {
@@ -21,91 +21,24 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
-        },
-        set(name: string, value: string, options: any) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          });
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          });
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          });
-        },
-        remove(name: string, options: any) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          });
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          });
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-          });
-        },
-      },
-    }
-  );
-
   const pathname = request.nextUrl.pathname;
 
   // Check if accessing dashboard routes
-  if (pathname.startsWith('/dashboard') || pathname.startsWith('/api/admin')) {
+  if (pathname.startsWith("/dashboard") || pathname.startsWith("/api/admin")) {
     // Get user session
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const session = await auth.api.getSession({
+      headers: request.headers,
+    });
 
     // Redirect to login if not authenticated
-    if (!user) {
+    if (!session || !session.user) {
       const url = request.nextUrl.clone();
-      url.pathname = '/login';
-      url.searchParams.set('redirectTo', pathname);
+      url.pathname = "/login";
+      url.searchParams.set("redirectTo", pathname);
       return NextResponse.redirect(url);
     }
 
-    // Get user role using service role key (bypasses RLS)
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    let userRole = 'donor'; // Default role
-
-    if (serviceRoleKey && supabaseUrl) {
-      try {
-        const profileResponse = await fetch(
-          `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=role`,
-          {
-            headers: {
-              "apikey": serviceRoleKey,
-              "Authorization": `Bearer ${serviceRoleKey}`,
-            },
-          }
-        );
-        const profiles = await profileResponse.json();
-        userRole = profiles?.[0]?.role || 'donor';
-      } catch (error) {
-        console.error('Middleware: Error fetching role', error);
-      }
-    }
+    const userRole = session.user.role || "donor";
 
     // Check route permissions
     const matchedRoute = Object.keys(routePermissions)
@@ -116,9 +49,7 @@ export async function proxy(request: NextRequest) {
       const allowedRoles = routePermissions[matchedRoute];
       if (!allowedRoles.includes(userRole)) {
         // Redirect to dashboard with message
-        const url = request.nextUrl.clone();
-        url.pathname = '/dashboard';
-        return NextResponse.redirect(url);
+        return NextResponse.redirect(new URL("/dashboard", request.url));
       }
     }
   }
@@ -127,8 +58,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    '/dashboard/:path*',
-    '/api/admin/:path*',
-  ],
+  matcher: ["/dashboard/:path*", "/api/admin/:path*"],
 };

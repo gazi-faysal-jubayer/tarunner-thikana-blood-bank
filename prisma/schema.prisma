@@ -1,0 +1,283 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// --- CORE AUTH MODELS (Better Auth + Admin Plugin) ---
+
+model User {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  email         String   @unique
+  emailVerified Boolean
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Auth & Profile
+  phone String?
+  role  String  @default("donor") // admin, volunteer, donor
+
+  // Admin-specific fields (Flattened)
+  adminEmployeeId String?
+  department      String?
+  permissions     String[] @default([])
+
+  // Better Auth Admin Plugin logic
+  banned     Boolean?
+  banReason  String?
+  banExpires DateTime?
+
+  // Relations
+  sessions          Session[]
+  accounts          Account[]
+  donor             Donor?
+  volunteer         Volunteer?
+  bloodRequests     BloodRequest[]
+  notifications     Notification[]
+  activityLogs      AdminActivityLog[]
+  verifiedDonations Donation[]         @relation("Verifier")
+
+  @@map("users")
+}
+
+model Session {
+  id             String   @id @map("_id")
+  expiresAt      DateTime
+  token          String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  ipAddress      String?
+  userAgent      String?
+  userId         String   @db.ObjectId
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  impersonatedBy String?
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @map("_id")
+  accountId             String
+  providerId            String
+  userId                String    @db.ObjectId
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// --- APP SPECIFIC MODELS ---
+
+type Location {
+  type        String  @default("Point")
+  coordinates Float[] // [longitude, latitude]
+}
+
+model Donor {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @unique @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bloodGroup  String
+  dateOfBirth DateTime
+  gender      String
+
+  // FIXED: Removed @default(point) as it's not supported on composite types
+  location Location
+  address  String
+  district String
+  division String
+
+  isAvailable      Boolean   @default(true)
+  lastDonationDate DateTime?
+  nextEligibleDate DateTime?
+  totalDonations   Int       @default(0)
+
+  donations Donation[]
+  createdAt DateTime   @default(now())
+
+  @@map("donors")
+}
+
+model Volunteer {
+  id                   String         @id @default(auto()) @map("_id") @db.ObjectId
+  userId               String         @unique @db.ObjectId
+  user                 User           @relation(fields: [userId], references: [id])
+  employeeId           String?
+  latitude             Float
+  longitude            Float
+  address              String
+  district             String
+  division             String
+  coverageRadiusKm     Float          @default(10)
+  isActive             Boolean        @default(true)
+  requestsHandled      Int            @default(0)
+  donationsFacilitated Int            @default(0)
+  successRate          Float          @default(0)
+  bloodRequests        BloodRequest[]
+  donations            Donation[]
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@map("volunteers")
+}
+
+model BloodRequest {
+  id                  String       @id @default(auto()) @map("_id") @db.ObjectId
+  trackingId          String       @unique
+  requesterType       String       @default("public")
+  requesterUserId     String?      @db.ObjectId
+  requester           User?        @relation(fields: [requesterUserId], references: [id])
+  requesterName       String
+  requesterPhone      String
+  patientName         String
+  bloodGroup          String
+  unitsNeeded         Int          @default(1)
+  hospitalName        String
+  hospitalAddress     String
+  latitude            Float
+  longitude           Float
+  district            String
+  division            String
+  neededBy            DateTime
+  isEmergency         Boolean      @default(false)
+  urgency             String       @default("normal")
+  status              String       @default("submitted")
+  assignedVolunteerId String?      @db.ObjectId
+  volunteer           Volunteer?   @relation(fields: [assignedVolunteerId], references: [id])
+  assignments         Assignment[]
+  donations           Donation[]
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@map("blood_requests")
+}
+
+model Assignment {
+  id               String            @id @default(auto()) @map("_id") @db.ObjectId
+  requestId        String            @db.ObjectId
+  request          BloodRequest      @relation(fields: [requestId], references: [id])
+  status           String            @default("pending")
+  isInTransit      Boolean           @default(false)
+  currentLocation  Location?
+  estimatedArrival DateTime?
+  distanceKm       Float?
+  durationMins     Int?
+  route            Route?
+  history          LocationHistory[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@map("assignments")
+}
+
+model Donation {
+  id               String       @id @default(auto()) @map("_id") @db.ObjectId
+  requestId        String       @db.ObjectId
+  request          BloodRequest @relation(fields: [requestId], references: [id])
+  donorId          String       @db.ObjectId
+  donor            Donor        @relation(fields: [donorId], references: [id])
+  volunteerId      String?      @db.ObjectId
+  volunteer        Volunteer?   @relation(fields: [volunteerId], references: [id])
+  unitsDonated     Int          @default(1)
+  donationDate     DateTime     @default(now())
+  donationLocation String?
+  verifiedBy       String?      @db.ObjectId
+  verifier         User?        @relation("Verifier", fields: [verifiedBy], references: [id])
+  verifiedAt       DateTime?
+  createdAt        DateTime     @default(now())
+
+  @@map("donations")
+}
+
+model Notification {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String?  @db.ObjectId
+  user      User?    @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  data      Json?
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model LocationHistory {
+  id           String     @id @default(auto()) @map("_id") @db.ObjectId
+  assignmentId String     @db.ObjectId
+  assignment   Assignment @relation(fields: [assignmentId], references: [id])
+  latitude     Float
+  longitude    Float
+  recordedAt   DateTime   @default(now())
+
+  @@map("location_history")
+}
+
+model Route {
+  id           String     @id @default(auto()) @map("_id") @db.ObjectId
+  assignmentId String     @unique @db.ObjectId
+  assignment   Assignment @relation(fields: [assignmentId], references: [id])
+  geometry     Json
+  distance     Float
+  duration     Float
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+
+  @@map("routes")
+}
+
+model AdminActivityLog {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  adminId    String   @db.ObjectId
+  admin      User     @relation(fields: [adminId], references: [id])
+  action     String
+  entityType String
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  @@map("admin_activity_logs")
+}
+
+model District {
+  id         String @id @default(auto()) @map("_id") @db.ObjectId
+  name       String
+  nameBn     String
+  division   String
+  divisionBn String
+
+  @@map("districts")
+}
