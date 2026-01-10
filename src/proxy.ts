@@ -14,7 +14,7 @@ const routePermissions: Record<string, string[]> = {
   '/dashboard/profile': ['admin', 'volunteer', 'donor'],
 };
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({
     request: {
       headers: request.headers,
